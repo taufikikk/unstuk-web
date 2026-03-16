@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Unstuck — Learn English People Actually Speak</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'DM Sans',-apple-system,sans-serif;background:#FBF7F0;-webkit-font-smoothing:antialiased}
+  input,button{font-family:inherit}
+  @keyframes cF{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}
+</style>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<!-- Config: edit config.js to set your Railway API URL -->
+<script src="/config.js"></script>
+<!-- Cards data must load BEFORE the React app -->
+<script src="/cards.js"></script>
+<script type="text/babel" data-type="module">
+const {useState,useEffect,useRef,useCallback}=React;
+
+/* ═══════════════════════════════════════════════
+   ICONS (minimal SVG replacements for lucide)
+   ═══════════════════════════════════════════════ */
+function Icon({d,size=24,color="currentColor",fill="none",strokeWidth=2,style={}}){
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",verticalAlign:"middle",...style}}><path d={d}/></svg>
+}
+const ChevronRight=p=><Icon {...p} d="M9 18l6-6-6-6"/>;
+const ArrowRight=p=><Icon {...p} d="M5 12h14M12 5l7 7-7 7"/>;
+const Check=p=><Icon {...p} d="M20 6L9 17l-5-5"/>;
+const Zap=p=><Icon {...p} d="M13 2L3 14h9l-1 8 10-12h-9l1-8" fill={p.fill||"none"}/>;
+const BookOpen=p=><Icon {...p} d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>;
+const Trophy=p=><Icon {...p} d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22M18 2H6v7a6 6 0 0 0 12 0V2z"/>;
+const Heart=p=><Icon {...p} d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>;
+const RotateCcw=p=><Icon {...p} d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/>;
+const Flame=p=><Icon {...p} d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>;
+const RefreshCw=p=><Icon {...p} d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16M3 3v5h5M21 21v-5h-5"/>;
+const HelpCircle=p=><Icon {...p} d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/>;
+const Shuffle=p=><Icon {...p} d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H20M20 6l-4-4M20 6l-4 4M2 6h1.9c1.5 0 2.9.9 3.6 2.2M20 18l-4-4M20 18l-4 4M16.8 15.8c-.7 1.1-2 1.7-3.3 1.7h-.4"/>;
+const Sparkles=p=><Icon {...p} d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3zM5 3v4M19 17v4M3 5h4M17 19h4"/>;
+const Brain=p=><Icon {...p} d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM12 5v13"/>;
+const Shield=p=><Icon {...p} d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>;
+
+/* ═══════════════════════════════════════════════
+   API STORAGE (replaces window.storage)
+   ═══════════════════════════════════════════════ */
+function getToken(){return localStorage.getItem("eng_token")}
+function setToken(t){localStorage.setItem("eng_token",t)}
+function clearToken(){localStorage.removeItem("eng_token")}
+function getUsername(){return localStorage.getItem("eng_user")||""}
+function setUsername(u){localStorage.setItem("eng_user",u)}
+
+async function apiLoad(){
+  const t=getToken();if(!t)return null;
+  try{
+    const r=await fetch(window.API_URL+"/api/progress",{headers:{"Authorization":"Bearer "+t}});
+    if(!r.ok)return null;
+    const j=await r.json();return j.data||null;
+  }catch{return null}
+}
+async function apiSave(data){
+  const t=getToken();if(!t)return;
+  try{await fetch(window.API_URL+"/api/progress",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({data})})}catch{}
+}
+async function apiReset(){
+  const t=getToken();if(!t)return;
+  try{await fetch(window.API_URL+"/api/reset",{method:"POST",headers:{"Authorization":"Bearer "+t}})}catch{}
+}
+async function apiRegister(username,password){
+  const r=await fetch(window.API_URL+"/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Registration failed");
+  setToken(j.token);setUsername(j.username);return j;
+}
+async function apiLogin(username,password){
+  const r=await fetch(window.API_URL+"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Login failed");
+  setToken(j.token);setUsername(j.username);return j;
+}
+
+function getToday(){return new Date().toISOString().split("T")[0]}
+function calcStreak(last,cur){const t=getToday();if(last===t)return cur;const y=new Date(Date.now()-864e5).toISOString().split("T")[0];return last===y?cur+1:1}
+
+/* ═══════════════════════════════════════════════
+   SRS ENGINE
+   ═══════════════════════════════════════════════ */
+function newCardStats(){return{interval:0,ease:2.5,correct:0,seen:0,streak:0,lastSeen:null,nextReview:null,mastery:0}}
+function updateSRS(stats,wasCorrect){const s={...stats};s.seen++;s.lastSeen=getToday();if(wasCorrect){s.correct++;s.streak++;if(s.mastery===0)s.mastery=1;else if(s.streak>=2&&s.mastery<5)s.mastery=Math.min(5,s.mastery+1);if(s.interval===0)s.interval=1;else if(s.interval===1)s.interval=3;else s.interval=Math.round(s.interval*s.ease);s.ease=Math.min(3,s.ease+0.1)}else{s.streak=0;s.mastery=Math.max(0,s.mastery-1);s.interval=0;s.ease=Math.max(1.3,s.ease-0.2)}const n=new Date();n.setDate(n.getDate()+s.interval);s.nextReview=n.toISOString().split("T")[0];return s}
+
+function daysBetween(a,b){return Math.round((new Date(b)-new Date(a))/864e5)}
+function buildLesson(allCards,statsMap){
+  const today=getToday();const due=[],fresh=[],mastered=[];
+  for(const c of allCards){const st=statsMap[c.id];if(!st||st.seen===0)fresh.push(c);else if(st.nextReview&&st.nextReview<=today)due.push({card:c,st,overdue:daysBetween(st.nextReview,today)});else if(st.mastery>=3)mastered.push({card:c,st})}
+  due.sort((a,b)=>b.overdue-a.overdue);fresh.sort(()=>Math.random()-.5);
+  const SIZE=8,lesson=[],used=new Set();
+  const wp=mastered.length>=2?mastered:[...mastered,...due.filter(d=>d.st.mastery>=2)];
+  for(let i=0;i<Math.min(2,wp.length);i++){if(!used.has(wp[i].card.id)){lesson.push(wp[i].card);used.add(wp[i].card.id)}}
+  for(const d of due){if(lesson.length>=SIZE-2&&fresh.length>0)break;if(lesson.length>=SIZE-1)break;if(!used.has(d.card.id)){lesson.push(d.card);used.add(d.card.id)}}
+  const nt=Math.max(2,Math.ceil(SIZE*.3));let na=0;
+  for(const c of fresh){if(lesson.length>=SIZE-1)break;if(na>=nt)break;if(!used.has(c.id)){lesson.push(c);used.add(c.id);na++}}
+  for(const c of[...due.map(d=>d.card),...fresh,...mastered.map(m=>m.card)]){if(lesson.length>=SIZE)break;if(!used.has(c.id)){lesson.push(c);used.add(c.id)}}
+  for(const c of allCards){if(lesson.length>=SIZE)break;if(!used.has(c.id)){lesson.push(c);used.add(c.id)}}
+  return lesson.slice(0,SIZE);
+}
+function exerciseForMastery(m){if(m<=0)return"learn";if(m===1)return"quiz";if(m===2)return"fill";if(m===3)return"rearrange";return"recall"}
+
+const ENCOURAGE=["This one's tough — let's make it easier.","No rush. Let's try a simpler version.","Tricky phrase! Here's a gentler way.","Even advanced learners struggle here.","Let's slow down — you'll get this."];
+
+/* ═══════════════════════════════════════════════
+   148 FLASHCARDS (abbreviated — same data as v3)
+   ═══════════════════════════════════════════════ */
+/* NOTE: This file includes all 148 cards inline below.
+   They are loaded from a separate script tag for readability. */
+
+/* ═══════════════════════════════════════════════
+   LPP + Messages + Theme (same as v3)
+   ═══════════════════════════════════════════════ */
+const MW=["Nice — exactly how a native speaker says it.","You nailed it. Trips up 70% of learners.","Smooth. Real instincts building.","Fast — English brain warming up.","Thinking in English, not translating.","Most textbooks skip this one.","Real English — the kind people use.","Sharp. Strong foundation.","Spot on. One step closer.","That phrase is now yours."];
+const MM=["Almost! Here's the key:","Close — super common mix-up:","Good instinct. Here's why:","Interesting pick — here's the difference:","Nearly there. Even advanced learners miss this:"];
+const GO=[{id:"scorekeeper",icon:"⚡",title:"Quick Challenge",sub:"Test what you know",color:"#E07A5F"},{id:"explorer",icon:"🔓",title:"Unlock Secrets",sub:"Phrases natives won't teach you",color:"#7B68A8"},{id:"witness",icon:"👥",title:"Join 12,847 Learners",sub:"See what others are learning",color:"#4A90A4"},{id:"pragmatist",icon:"🎯",title:"Use This Tonight",sub:"One phrase for today",color:"#81B29A"}];
+const PQ=[
+  {id:1,prompt:"Which sounds like a real person talking?",options:[{text:"I am wanting to go to the cinema tonight.",score:1},{text:"I feel like going to the movies tonight.",score:3},{text:"I wanna catch a movie tonight, you down?",score:4},{text:"I want to go to cinema.",score:0}]},
+  {id:2,prompt:"Colleague asks about the project. Most natural?",options:[{text:"The project is being done by me since last week.",score:1},{text:"I've been working on it since last week.",score:3},{text:"I'm on it — been grinding since last week.",score:4},{text:"I working on it from last week.",score:0}]},
+  {id:3,prompt:"How would you politely disagree with your boss?",options:[{text:"No, that's wrong. My idea is better.",score:1},{text:"I see your point, but maybe we should consider another approach.",score:3},{text:"I hear you, though I'd push back on the timeline.",score:4},{text:"I not agree with you.",score:0}]},
+  {id:4,prompt:"Most professional email closing?",options:[{text:"Bye bye, see you!",score:0},{text:"Thank you and regards.",score:1},{text:"Looking forward to hearing from you.",score:3},{text:"Let me know if anything needs adjusting on my end.",score:4}]},
+  {id:5,prompt:"Someone asks 'How's the project?' — most natural reply?",options:[{text:"The project is progressing according to schedule.",score:1},{text:"It's coming along. Hit a few snags but we're on track.",score:3},{text:"Honestly? It's been a grind, but we're getting there.",score:4},{text:"Project is good going.",score:0}]},
+];
+const TT=[{title:"How Americans Really Say 'I Don't Know'",hint:"Nobody says 'I do not know' in real life."},{title:"The 3 Magic Words for Job Interviews",hint:"These make you sound 10x more professional."},{title:"Why 'Get' Is English's Most Powerful Word",hint:"Native speakers use it 47 different ways."},{title:"Polite Ways to Say 'That's a Terrible Idea'",hint:"In English, HOW you disagree > IF you disagree."}];
+function rnd(a){return a[Math.floor(Math.random()*a.length)]}
+
+const LPP={
+  scorekeeper:{icon:"⚡",color:"#E07A5F",label:"The Scorekeeper",welcomeMsgs:(s,p,m)=>[`Day ${s} streak — your longest yet?`,`${m} mastered. Today's goal: ${m+1}.`,`Accuracy climbing. Let's keep that trend.`],microWins:["Correct! Accuracy ticking up.","70%+ so far — above average.","Fast answer. Speed improving.","Another point. Keep stacking.","Beating yesterday's pace."],mistakeMsgs:["Costs a point — here's how to recover:","Accuracy dipped. Quick fix:","One correction recovers your score:","Miss. Fastest way to lock this in:"],lessonIntro:"Let's see how many you can nail today.",celebrationMsg:pct=>pct>=80?`${pct}% accuracy — strong session.`:`${pct}% — solid. Tomorrow, push higher.`,proofWallTitle:"🏆 Score breakdown:",tomorrowHook:"Tomorrow's session is calibrated to push your accuracy even higher."},
+  explorer:{icon:"🔓",color:"#7B68A8",label:"The Explorer",welcomeMsgs:(s,p,m)=>[`${148-p} phrases unexplored. Ready?`,`${p} unlocked so far. New territory ahead.`,`Something you've never seen is waiting.`],microWins:["Unlocked! In your collection now.","New pattern discovered.","A tool most learners don't have.","Native speakers use this daily. Yours now.","English map just expanded."],mistakeMsgs:["Close cousin. Here's the secret:","Hidden distinction worth knowing:","This one has a twist:","Real answer reveals something cool:"],lessonIntro:"New phrases ahead. Let's explore.",celebrationMsg:pct=>"You explored 8 phrases today — some brand new, some from a new angle.",proofWallTitle:"🗺️ Phrases discovered:",tomorrowHook:"New content unlocked — phrases you haven't seen yet are waiting."},
+  witness:{icon:"👥",color:"#4A90A4",label:"The Community Learner",welcomeMsgs:(s,p,m)=>[`${Math.floor(200+Math.random()*300)} learners practiced today. Jump in?`,`Day ${s} — ahead of 68% of learners.`,`${Math.floor(50+Math.random()*100)} people learning right now.`],microWins:["73% get this wrong — not you.","The one most people struggle with. Easy for you.","Ahead of the curve on this phrase.","Community says this is hard. You disagree.","Most need 3 tries. You: 1."],mistakeMsgs:["Trips up 71% — good company:","Community's most-missed. Here's why:","4 out of 5 pick the same wrong answer:","Most common mistake. Not alone:"],lessonIntro:"Join hundreds of learners practicing right now.",celebrationMsg:pct=>`Joined ${Math.floor(800+Math.random()*500)} learners who completed today.`,proofWallTitle:"🏆 How you compare:",tomorrowHook:"Tomorrow, see how your progress compares to learners at your level."},
+  pragmatist:{icon:"🎯",color:"#81B29A",label:"The Pragmatist",welcomeMsgs:(s,p,m)=>[`Today's mission: one phrase you'll use at work.`,`${m} usable phrases. Let's add more.`,`After today, one more real situation handled.`],microWins:["Works in emails, meetings, and chat.","Use this at work tomorrow. Literally.","Real phrase, real situations. Yours now.","Next time someone asks, you're ready.","Immediately more natural."],mistakeMsgs:["Close enough in conversation — here's the natural version:","You'd be understood. Here's the professional tweak:","Natives would get you. Here's the polish:","Almost usable. One fix for real-world:"],lessonIntro:"Phrases you'll actually use. Let's go.",celebrationMsg:pct=>"You practiced 8 phrases for real conversations starting today.",proofWallTitle:"🎯 Skills you can use now:",tomorrowHook:"Tomorrow: one more real-world situation you'll be ready for."},
+};
+function getLPP(p){return LPP[p]||LPP.pragmatist}
+
+/* ═══════════════════════════════════════════════
+   THEME
+   ═══════════════════════════════════════════════ */
+const T={bg:"#FBF7F0",card:"#FFFFFF",text:"#1A1A2E",muted:"#6B6B80",accent:"#D4613E",accentSoft:"#FDEEE8",ok:"#4A8B6F",okSoft:"#E8F5EE",hi:"#F2CC8F",hiSoft:"#FFF8E8",navy:"#3D405B",navySoft:"#EEEEF2",purple:"#7B68A8",purpleSoft:"#F0ECF6",teal:"#4A90A4",tealSoft:"#E8F4F7",border:"#E8E4DC",shadow:"0 2px 20px rgba(26,26,46,0.06)"};
+const Fd="'Fraunces',Georgia,serif",Fb="'DM Sans',-apple-system,sans-serif";
+
+/* ═══════════════════════════════════════════════
+   SHARED UI
+   ═══════════════════════════════════════════════ */
+function FadeIn({children,delay=0,style={}}){const[v,setV]=useState(false);useEffect(()=>{const t=setTimeout(()=>setV(true),delay);return ()=>clearTimeout(t)},[delay]);return <div style={{opacity:v?1:0,transform:v?"translateY(0)":"translateY(14px)",transition:"all .45s cubic-bezier(.25,.46,.45,.94)",...style}}>{children}</div>}
+function Bar({current,total}){return <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{flex:1,height:5,borderRadius:5,background:T.border}}><div style={{height:"100%",borderRadius:5,background:`linear-gradient(90deg,${T.accent},${T.hi})`,width:`${(current/total)*100}%`,transition:"width .6s cubic-bezier(.25,.46,.45,.94)"}}/></div><span style={{fontFamily:Fb,fontSize:13,color:T.muted,fontWeight:500,minWidth:36}}>{current}/{total}</span></div>}
+function Btn({children,onClick,v="primary",style={},disabled=false}){const s={primary:{background:T.accent,color:"#fff",border:"none"},secondary:{background:T.card,color:T.text,border:`1.5px solid ${T.border}`},ghost:{background:"transparent",color:T.accent,border:"none"}};return <button onClick={onClick} disabled={disabled} style={{...s[v],fontFamily:Fb,fontSize:16,fontWeight:600,padding:"14px 28px",borderRadius:12,cursor:disabled?"default":"pointer",opacity:disabled?.5:1,transition:"all .2s",width:"100%",letterSpacing:"-0.01em",...style}}>{children}</button>}
+function Badge({children,color=T.accent,bg=T.accentSoft}){return <div style={{display:"inline-block",background:bg,padding:"4px 12px",borderRadius:8}}><span style={{fontFamily:Fb,fontSize:12,fontWeight:600,color,letterSpacing:"0.04em"}}>{children}</span></div>}
+function Confetti(){const c=[T.accent,T.hi,T.ok,T.purple,T.teal,"#F4A261"];const p=Array.from({length:40},(_,i)=>({id:i,left:Math.random()*100,delay:Math.random()*.8,dur:1.5+Math.random()*1.5,c:c[i%c.length],s:4+Math.random()*6,r:Math.random()*360}));return <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:1e3,overflow:"hidden"}}>{p.map(x=><div key={x.id} style={{position:"absolute",top:-10,left:`${x.left}%`,width:x.s,height:x.s*1.5,background:x.c,borderRadius:1,animation:`cF ${x.dur}s ease-in ${x.delay}s forwards`,transform:`rotate(${x.r}deg)`}}/>)}</div>}
+
+function HelpOverlay({card,onClose,onSkip}){return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:500,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{background:T.card,borderRadius:"20px 20px 0 0",padding:28,maxWidth:440,width:"100%",maxHeight:"70vh",overflow:"auto"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h3 style={{fontFamily:Fd,fontSize:20,fontWeight:700,color:T.text,margin:0}}>Need help?</h3><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:T.muted}}>✕</button></div><div style={{background:T.bg,borderRadius:14,padding:18,marginBottom:14}}><p style={{fontFamily:Fd,fontSize:18,fontWeight:600,color:T.accent,margin:"0 0 8px",fontStyle:"italic"}}>"{card.phrase}"</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 4px"}}>🇮🇩 {card.meaning}</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 10px"}}>🇬🇧 {card.meaningEn}</p><p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:0}}>💡 {card.usage}</p></div><div style={{background:T.navySoft,borderRadius:12,padding:16,marginBottom:18}}><p style={{fontFamily:Fb,fontSize:14,color:T.navy,margin:0,fontStyle:"italic"}}>"{card.context}"</p></div><div style={{display:"flex",gap:10}}><Btn v="secondary" onClick={onClose} style={{flex:1}}>Got it, let me try</Btn><Btn v="ghost" onClick={onSkip} style={{flex:0,width:"auto",padding:"14px 20px",color:T.muted}}>Skip</Btn></div></div></div>}
+function FrustrationBanner({message}){return <FadeIn><div style={{background:T.purpleSoft,border:`1.5px solid ${T.purple}30`,borderRadius:14,padding:16,marginBottom:14,display:"flex",gap:12,alignItems:"flex-start"}}><Shield size={20} color={T.purple} style={{flexShrink:0,marginTop:2}}/><div><p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.purple,margin:"0 0 4px"}}>We've got you</p><p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0,lineHeight:1.5}}>{message}</p></div></div></FadeIn>}
+
+/* ═══════════════════════════════════════════════
+   AUTH SCREEN
+   ═══════════════════════════════════════════════ */
+function AuthScreen({onAuth}){
+  const[mode,setMode]=useState("login");
+  const[username,setUsername]=useState("");
+  const[password,setPassword]=useState("");
+  const[error,setError]=useState("");
+  const[loading,setLoading]=useState(false);
+
+  const submit=async()=>{
+    setError("");setLoading(true);
+    try{
+      if(mode==="register")await apiRegister(username,password);
+      else await apiLogin(username,password);
+      onAuth();
+    }catch(e){setError(e.message)}
+    setLoading(false);
+  };
+
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>
+    <FadeIn><div style={{width:64,height:64,borderRadius:16,background:`linear-gradient(135deg,${T.accent},${T.hi})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 4px 20px ${T.accent}33`}}><BookOpen size={28} color="#fff"/></div></FadeIn>
+    <FadeIn delay={100}><h1 style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>{mode==="login"?"Welcome back":"Create account"}</h1><p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{mode==="login"?"Sign in to continue learning":"Join Unstuck — learn English that sticks"}</p></FadeIn>
+    <FadeIn delay={200} style={{width:"100%",maxWidth:340}}>
+      <div style={{background:T.card,borderRadius:20,padding:28,boxShadow:T.shadow}}>
+        {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:10,padding:"10px 14px",marginBottom:16}}><p style={{fontFamily:Fb,fontSize:13,color:"#C0392B",margin:0}}>{error}</p></div>}
+        <label style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.muted,display:"block",marginBottom:6}}>Username</label>
+        <input value={username} onChange={e=>setUsername(e.target.value)} placeholder="e.g. taufik" autoComplete="username"
+          style={{width:"100%",padding:"12px 16px",borderRadius:10,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.bg,outline:"none",boxSizing:"border-box",marginBottom:16}}
+          onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+        <label style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.muted,display:"block",marginBottom:6}}>Password</label>
+        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Min 4 characters" autoComplete={mode==="register"?"new-password":"current-password"}
+          onKeyDown={e=>{if(e.key==="Enter"&&username&&password)submit()}}
+          style={{width:"100%",padding:"12px 16px",borderRadius:10,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.bg,outline:"none",boxSizing:"border-box",marginBottom:20}}
+          onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+        <Btn onClick={submit} disabled={!username.trim()||!password||loading}>{loading?"...":(mode==="login"?"Sign in":"Create account")}</Btn>
+      </div>
+      <p style={{fontFamily:Fb,fontSize:14,color:T.muted,textAlign:"center",marginTop:20}}>
+        {mode==="login"?"Don't have an account? ":"Already have an account? "}
+        <button onClick={()=>{setMode(mode==="login"?"register":"login");setError("")}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:Fb,fontSize:14}}>
+          {mode==="login"?"Sign up":"Sign in"}
+        </button>
+      </p>
+    </FadeIn>
+  </div>
+}
+
+/* ═══════════════════════════════════════════════
+   The cards are loaded from the CARDS global
+   (injected via a separate script tag below)
+   ═══════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════
+   EXERCISE COMPONENTS (same as v3)
+   ═══════════════════════════════════════════════ */
+function RearrangeEx({card,onResult,onHelp}){const[pool,setPool]=useState([]);const[built,setBuilt]=useState([]);const[done,setDone]=useState(false);const[ok,setOk]=useState(null);const[msg,setMsg]=useState("");useEffect(()=>{setPool([...card.rearrange.words]);setBuilt([]);setDone(false);setOk(null)},[card.id]);const add=(w,i)=>{if(done)return;const nb=[...built,w],np=pool.filter((_,j)=>j!==i);setBuilt(nb);setPool(np);if(np.length===0){const u=nb.join(" ").toLowerCase().replace(/[^a-z0-9' ]/g,"").trim(),t=card.rearrange.sentence.toLowerCase().replace(/[^a-z0-9' ]/g,"").trim();setOk(u===t);setDone(true);setMsg(u===t?rnd(MW):rnd(MM))}};const rm=i=>{if(done)return;setPool([...pool,built[i]]);setBuilt(built.filter((_,j)=>j!==i))};const reset=()=>{setPool([...card.rearrange.words]);setBuilt([]);setDone(false);setOk(null)};
+  return <FadeIn key={`r-${card.id}`}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><Badge color={T.purple} bg={T.purpleSoft}>🧩 REARRANGE</Badge><button onClick={onHelp} style={{background:T.navySoft,border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:Fb,fontSize:12,fontWeight:600,color:T.navy}}><HelpCircle size={14}/>Help</button></div><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"4px 0 10px"}}>Tap words in the right order:</p><div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:12}}><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px"}}>🇮🇩 {card.meaning}</p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇬🇧 {card.meaningEn}</p></div><div style={{minHeight:48,background:T.card,borderRadius:12,border:`2px dashed ${built.length?T.accent:T.border}`,padding:10,marginBottom:10,display:"flex",flexWrap:"wrap",gap:6}}>{!built.length&&<span style={{fontFamily:Fb,fontSize:14,color:T.border}}>Tap words below...</span>}{built.map((w,i)=><button key={`b${i}`} onClick={()=>rm(i)} style={{fontFamily:Fb,fontSize:14,fontWeight:500,background:T.accentSoft,color:T.accent,border:`1.5px solid ${T.accent}40`,borderRadius:7,padding:"5px 11px",cursor:done?"default":"pointer"}}>{w}</button>)}</div><div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>{pool.map((w,i)=><button key={`p${i}`} onClick={()=>add(w,i)} style={{fontFamily:Fb,fontSize:14,fontWeight:500,background:T.card,color:T.text,border:`1.5px solid ${T.border}`,borderRadius:7,padding:"5px 11px",cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,.05)"}}>{w}</button>)}</div>{!done&&built.length>0&&<button onClick={reset} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",display:"flex",alignItems:"center",gap:5,marginBottom:8}}><RefreshCw size={13}/>Reset</button>}{done&&<FadeIn><div style={{padding:14,borderRadius:12,background:ok?T.okSoft:T.hiSoft,marginBottom:12}}>{ok?<p style={{fontFamily:Fb,fontSize:14,color:T.ok,fontWeight:500,margin:0}}>✨ {msg}</p>:<div><p style={{fontFamily:Fb,fontSize:14,color:"#B8860B",fontWeight:500,margin:"0 0 5px"}}>{msg}</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0}}>Correct: <strong style={{color:T.ok}}>{card.rearrange.sentence}</strong></p></div>}</div><Btn onClick={()=>onResult(ok)}>Continue →</Btn></FadeIn>}</FadeIn>
+}
+
+function RecallEx({card,onResult,onHelp,autoHint=false}){const[input,setInput]=useState("");const[done,setDone]=useState(false);const[ok,setOk]=useState(null);const[msg,setMsg]=useState("");const[hint,setHint]=useState(autoHint);const ref=useRef(null);useEffect(()=>{setInput("");setDone(false);setOk(null);setHint(autoHint);setTimeout(()=>ref.current?.focus(),100)},[card.id,autoHint]);const check=()=>{const a=input.trim().toLowerCase().replace(/[.,!?…]/g,""),t=card.phrase.toLowerCase().replace(/[.,!?…]/g,"").trim(),c=a.includes(t)||(t.includes(a)&&a.length>=t.length*.7);setOk(c);setDone(true);setMsg(c?rnd(MW):rnd(MM))};
+  return <FadeIn key={`rc-${card.id}`}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><Badge color="#B8860B" bg={T.hiSoft}>🧠 TYPE FROM MEMORY</Badge><button onClick={onHelp} style={{background:T.navySoft,border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:Fb,fontSize:12,fontWeight:600,color:T.navy}}><HelpCircle size={14}/>Help</button></div><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"4px 0 10px"}}>What English phrase means this?</p><div style={{background:T.card,borderRadius:14,padding:18,boxShadow:T.shadow,marginBottom:12}}><p style={{fontFamily:Fd,fontSize:18,fontWeight:500,color:T.text,margin:"0 0 6px",fontStyle:"italic",lineHeight:1.4}}>"{card.meaning}"</p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 10px"}}>🇬🇧 {card.meaningEn}</p><div style={{background:T.navySoft,borderRadius:10,padding:10}}><p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:0}}>💬 {card.context.replace(new RegExp(card.phrase.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i'),"______")}</p></div></div>{hint&&!done&&<FadeIn><div style={{background:T.hiSoft,borderRadius:10,padding:"8px 12px",marginBottom:10}}><p style={{fontFamily:Fb,fontSize:13,color:"#B8860B",margin:0}}>💡 Starts with: <strong>"{card.phrase.slice(0,Math.ceil(card.phrase.length*.45))}..."</strong></p></div></FadeIn>}{!done&&<><input ref={ref} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&input.trim())check()}} placeholder="Type the phrase..." style={{width:"100%",padding:"14px 16px",borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",marginBottom:12}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/><div style={{display:"flex",gap:10}}>{!hint&&<Btn v="secondary" onClick={()=>setHint(true)} style={{width:"auto",flex:"0 0 auto",padding:"14px 20px"}}>Hint</Btn>}<Btn onClick={check} disabled={!input.trim()}>Check</Btn></div></>}{done&&<FadeIn><div style={{padding:14,borderRadius:12,background:ok?T.okSoft:T.hiSoft,marginBottom:12}}>{ok?<div><p style={{fontFamily:Fb,fontSize:15,fontWeight:600,color:T.ok,margin:"0 0 3px"}}>🧠 Recalled!</p><p style={{fontFamily:Fb,fontSize:14,color:T.ok,margin:0}}>{msg}</p></div>:<div><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:"#B8860B",margin:"0 0 6px"}}>{msg}</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 5px"}}>Answer: <strong style={{color:T.ok}}>{card.phrase}</strong></p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0,fontStyle:"italic"}}>"{card.context}"</p></div>}</div><Btn onClick={()=>onResult(ok)}>Continue →</Btn></FadeIn>}</FadeIn>
+}
+
+/* ═══════════════════════════════════════════════
+   ALL SCREENS (same as v3, with F.d→Fd, F.b→Fb)
+   For brevity, these are the same components with
+   minor variable name changes for the standalone context.
+   ═══════════════════════════════════════════════ */
+
+function WelcomeScreen({onStart}){return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}><FadeIn><div style={{width:64,height:64,borderRadius:16,background:`linear-gradient(135deg,${T.accent},${T.hi})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 4px 20px ${T.accent}33`}}><BookOpen size={28} color="#fff"/></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:36,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 12px",lineHeight:1.15}}><span style={{color:T.accent,fontStyle:"italic"}}>Unstuck</span><br/>English that people<br/>actually speak</h1></FadeIn><FadeIn delay={300}><p style={{fontFamily:Fb,fontSize:16,color:T.muted,textAlign:"center",margin:"0 0 40px",lineHeight:1.6,maxWidth:320}}>The app for people who've tried everything.<br/>Real phrases. Real progress. No quitting.</p></FadeIn><FadeIn delay={450} style={{width:"100%",maxWidth:340}}><Btn onClick={onStart}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Start learning<ChevronRight size={18}/></span></Btn></FadeIn></div>}
+
+function WelcomeBackScreen({streak,level,phrases,masteredCount,lpp,onContinue,onReset,onLogout}){const P=getLPP(lpp);const msgs=P.welcomeMsgs(streak,phrases,masteredCount);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{width:56,height:56,borderRadius:14,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{P.icon}</div><button onClick={onLogout} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 14px",fontFamily:Fb,fontSize:12,color:T.muted,cursor:"pointer"}}>Sign out</button></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:32,fontWeight:700,color:T.text,margin:"0 0 10px"}}>Welcome back!</h1><p style={{fontFamily:Fb,fontSize:16,color:T.muted,margin:"0 0 28px",lineHeight:1.5}}>{rnd(msgs)}</p></FadeIn><FadeIn delay={300}><div style={{display:"flex",gap:12,marginBottom:28}}>{[{icon:<Flame size={20} color={T.accent}/>,val:streak,label:"streak",c:T.accent},{icon:<BookOpen size={20} color={T.ok}/>,val:phrases,label:"seen",c:T.ok},{icon:<Brain size={20} color={T.purple}/>,val:masteredCount,label:"mastered",c:T.purple},{icon:<Trophy size={20} color={T.teal}/>,val:level,label:"level",c:T.teal}].map((s,i)=><div key={i} style={{flex:1,background:T.card,borderRadius:14,padding:14,textAlign:"center",boxShadow:T.shadow}}><div style={{marginBottom:4}}>{s.icon}</div><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:s.c}}>{s.val}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>{s.label}</div></div>)}</div></FadeIn><FadeIn delay={450}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Today's lesson<ArrowRight size={18}/></span></Btn><button onClick={onReset} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
+
+function GoalScreen({onSelect}){return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><FadeIn><Badge>STEP 1 OF 3</Badge><h2 style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>What sounds good<br/>right now?</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 24px"}}>Pick whatever catches your eye.</p></FadeIn>{GO.map((g,i)=><FadeIn key={g.id} delay={150+i*80}><button onClick={()=>onSelect(g.id)} style={{width:"100%",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:16,padding:"18px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,textAlign:"left",transition:"all .2s",boxShadow:T.shadow,marginBottom:12}} onMouseEnter={e=>{e.currentTarget.style.borderColor=g.color;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform=""}}><div style={{width:48,height:48,borderRadius:12,background:`${g.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{g.icon}</div><div style={{flex:1}}><div style={{fontFamily:Fb,fontSize:16,fontWeight:600,color:T.text}}>{g.title}</div><div style={{fontFamily:Fb,fontSize:13,color:T.muted,marginTop:2}}>{g.sub}</div></div><ChevronRight size={18} color={T.muted} style={{flexShrink:0}}/></button></FadeIn>)}</div>}
+
+function PlacementScreen({onComplete}){const[cur,setCur]=useState(0);const[scores,setScores]=useState([]);const[sel,setSel]=useState(null);const[show,setShow]=useState(false);const[opts,setOpts]=useState([]);useEffect(()=>{setOpts([...PQ[cur].options].sort(()=>Math.random()-.5))},[cur]);const q=PQ[cur];const pick2=(opt,i)=>{if(sel!==null)return;setSel(i);setShow(true);const ns=[...scores,opt.score];setScores(ns);setTimeout(()=>{if(cur<PQ.length-1){setCur(cur+1);setSel(null);setShow(false)}else{const avg=ns.reduce((a,b)=>a+b,0)/ns.length;onComplete(avg>=3.5?"C1":avg>=2.5?"B2":avg>=1.5?"B1":"A2")}},1100)};return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><FadeIn><Badge>STEP 2 OF 3</Badge><h2 style={{fontFamily:Fd,fontSize:24,fontWeight:700,color:T.text,margin:"12px 0 4px"}}>Quick vibe check</h2><p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 20px"}}>No scores. Just finding your level.</p></FadeIn><Bar current={cur+1} total={PQ.length}/><div style={{marginTop:24}}><FadeIn key={q.id}><p style={{fontFamily:Fb,fontSize:17,fontWeight:500,color:T.text,margin:"0 0 20px",lineHeight:1.5}}>{q.prompt}</p><div style={{display:"flex",flexDirection:"column",gap:10}}>{opts.map((o,i)=>{const best=opts.reduce((a,b)=>a.score>b.score?a:b),isBest=show&&o===best,isSel=sel===i;let bg=T.card,bdr=T.border;if(isSel&&!isBest){bdr=T.hi;bg=T.hiSoft}if(isBest&&show){bdr=T.ok;bg=T.okSoft}return <button key={i} onClick={()=>pick2(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"14px 16px",cursor:sel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,color:T.text,textAlign:"left",transition:"all .3s",lineHeight:1.45}}><div style={{display:"flex",alignItems:"flex-start",gap:10}}><span style={{flexShrink:0,width:22,height:22,borderRadius:11,border:`2px solid ${isBest&&show?T.ok:isSel?T.hi:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",marginTop:1,background:isBest&&show?T.ok:"transparent",transition:"all .3s"}}>{isBest&&show&&<Check size={12} color="#fff" strokeWidth={3}/>}</span><span>{o.text}</span></div></button>})}</div></FadeIn></div></div>}
+
+function LevelRevealScreen({level,onContinue}){const d={A2:{w:"1,000+",d:"You understand basic phrases.",n:"Building confidence"},B1:{w:"2,500+",d:"You handle everyday situations.",n:"Sounding natural"},B2:{w:"4,000+",d:"You interact fluently on familiar topics.",n:"Professional English"},C1:{w:"8,000+",d:"You express yourself fluently.",n:"Advanced polish"}};const info=d[level]||d.B1;return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}><FadeIn><div style={{textAlign:"center",marginBottom:32}}><Badge><Sparkles size={13} style={{verticalAlign:-2,marginRight:4}}/>Level detected</Badge></div></FadeIn><FadeIn delay={300}><div style={{textAlign:"center",marginBottom:32}}><div style={{fontFamily:Fd,fontSize:64,fontWeight:700,color:T.accent,lineHeight:1}}>{level}</div><p style={{fontFamily:Fb,fontSize:14,color:T.muted,marginTop:8}}>You know <strong style={{color:T.text}}>{info.w}</strong> English words!</p></div></FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:16,padding:24,maxWidth:360,width:"100%",boxShadow:T.shadow,marginBottom:32}}><p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.6,margin:0}}>{info.d}</p><div style={{height:1,background:T.border,margin:"16px 0"}}/><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}><strong style={{color:T.accent}}>Next:</strong> {info.n}</p></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Start my first lesson<ArrowRight size={18}/></span></Btn></FadeIn></div>}
+
+/* ═══════════════════════════════════════════════
+   LESSON SCREEN
+   ═══════════════════════════════════════════════ */
+function LessonScreen({onComplete,allStats,lpp}){
+  const[lesson]=useState(()=>buildLesson(window.CARDS,allStats));
+  const SIZE=lesson.length;const P=getLPP(lpp);
+  const[step,setStep]=useState(0);const[phase,setPhase]=useState("learn");const[sel,setSel]=useState(null);const[isOk,setIsOk]=useState(null);const[fillIn,setFillIn]=useState("");const[showHint,setShowHint]=useState(false);const[quizOpts,setQuizOpts]=useState([]);const[microWin,setMicroWin]=useState("");const[mistakeMsg,setMistakeMsg]=useState("");const[showHelp,setShowHelp]=useState(false);const[frustMsg,setFrustMsg]=useState(null);const[downgraded,setDowngraded]=useState(false);const scoreRef=useRef(0);const streakRef=useRef(0);const wrongStreakRef=useRef(0);const resultsRef=useRef([]);const[,tick]=useState(0);const fillRef=useRef(null);
+  const card=lesson[step];const isLast=step>=SIZE-1;
+  const getPhaseForCard=(c,dg)=>{const st=allStats[c.id];const m=st?st.mastery:0;const base=exerciseForMastery(m);if(!dg)return base;const order=["learn","quiz","fill","rearrange","recall"];return order[Math.max(0,order.indexOf(base)-1)]};
+
+  useEffect(()=>{const ic=lesson[0];const ip=getPhaseForCard(ic,false);setPhase(ip);if(ip==="learn"||ip==="quiz")setQuizOpts([...ic.wrongOptions.slice(0,3),ic.phrase].sort(()=>Math.random()-.5))},[]);
+  useEffect(()=>{if(phase==="fill"&&fillRef.current)fillRef.current.focus()},[phase]);
+
+  const good=()=>{scoreRef.current++;streakRef.current++;wrongStreakRef.current=0;setMicroWin(rnd(P.microWins));resultsRef.current.push({cardId:card.id,correct:true});tick(n=>n+1)};
+  const bad=()=>{streakRef.current=0;wrongStreakRef.current++;setMistakeMsg(rnd(P.mistakeMsgs));resultsRef.current.push({cardId:card.id,correct:false});tick(n=>n+1);if(wrongStreakRef.current>=2)setFrustMsg(rnd(ENCOURAGE))};
+  const next=()=>{if(isLast){onComplete(scoreRef.current,SIZE,lesson,resultsRef.current);return}const ns=step+1;const nc=lesson[ns];const np=getPhaseForCard(nc,false);setStep(ns);setPhase(np);setSel(null);setIsOk(null);setFillIn("");setShowHint(false);setMicroWin("");setMistakeMsg("");setFrustMsg(null);setDowngraded(false);if(np==="learn"||np==="quiz")setQuizOpts([...nc.wrongOptions.slice(0,3),nc.phrase].sort(()=>Math.random()-.5))};
+  const skip=()=>{setShowHelp(false);resultsRef.current.push({cardId:card.id,correct:false});next()};
+  const bored=()=>{const types=["quiz","fill","rearrange","recall"].filter(t=>t!==phase);const p=rnd(types);setPhase(p);setSel(null);setIsOk(null);setFillIn("");setShowHint(false);setMicroWin("");setMistakeMsg("");if(p==="quiz")setQuizOpts([...card.wrongOptions.slice(0,3),card.phrase].sort(()=>Math.random()-.5))};
+  const downgrade=()=>{setFrustMsg(null);wrongStreakRef.current=0;const easier=getPhaseForCard(card,true);setPhase(easier);setSel(null);setIsOk(null);setFillIn("");setShowHint(false);setDowngraded(true);if(easier==="quiz")setQuizOpts([...card.wrongOptions.slice(0,3),card.phrase].sort(()=>Math.random()-.5))};
+  const doQuiz=(opt,i)=>{if(sel!==null)return;setSel(i);const ok=opt===card.phrase;setIsOk(ok);if(ok)good();else bad()};
+  const doFill=()=>{const a=fillIn.trim().toLowerCase().replace(/[.,!?]/g,""),parts=card.fillAnswer.toLowerCase().replace(/[.,!?]/g,"").split("|"),ok=parts.some(p=>a.includes(p.trim()));setIsOk(ok);if(ok)good();else bad();setPhase("fill-fb")};
+
+  const st=allStats[card.id];const mastery=st?st.mastery:0;
+  const phaseLabels={learn:"👀 New",quiz:"👀 Recognize",fill:"✏️ Fill In",rearrange:"🧩 Rearrange",recall:"🧠 Recall","fill-fb":"✏️ Fill In"};
+  const masteryLabel=["New","Seen","Familiar","Practiced","Strong","Mastered"][Math.min(mastery,5)];
+  const helpBtn=<button onClick={()=>setShowHelp(true)} style={{background:T.navySoft,border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:Fb,fontSize:12,fontWeight:600,color:T.navy}}><HelpCircle size={14}/>Help</button>;
+  const switchBtn=<button onClick={bored} style={{background:"none",border:`1.5px solid ${T.border}`,borderRadius:8,padding:"6px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:Fb,fontSize:12,fontWeight:500,color:T.muted}}><Shuffle size={13}/>Switch</button>;
+
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    {showHelp&&<HelpOverlay card={card} onClose={()=>setShowHelp(false)} onSkip={skip}/>}
+    <div style={{marginBottom:14}}><Bar current={step+1} total={SIZE}/><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>{phaseLabels[phase]||phase}</span><span style={{fontFamily:Fb,fontSize:11,color:T.purple,background:T.purpleSoft,padding:"2px 8px",borderRadius:6}}>{masteryLabel}</span></div>{streakRef.current>=3&&<span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.accent,display:"flex",alignItems:"center",gap:3}}><Zap size={14} fill={T.accent} color={T.accent}/>{streakRef.current}x</span>}</div></div>
+
+    {frustMsg&&<div><FrustrationBanner message={frustMsg}/><div style={{display:"flex",gap:10,marginBottom:14}}><Btn v="secondary" onClick={downgrade} style={{flex:1}}>Make it easier</Btn><Btn v="ghost" onClick={()=>setFrustMsg(null)} style={{flex:0,width:"auto",padding:"14px 20px",color:T.muted}}>I'm okay</Btn></div></div>}
+
+    {phase==="learn"&&!frustMsg&&<FadeIn key={`l-${step}`}><p style={{fontFamily:Fb,fontSize:13,color:P.color,fontWeight:500,margin:"0 0 12px"}}>{P.lessonIntro}</p><div style={{background:T.card,borderRadius:18,padding:24,boxShadow:T.shadow,marginBottom:18}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><Badge color="#B8860B" bg={T.hiSoft}>NEW PHRASE</Badge>{helpBtn}</div><h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"0 0 12px",fontStyle:"italic"}}>"{card.phrase}"</h3><p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.6,margin:"0 0 12px"}}><span style={{color:T.muted}}>Example: </span>{card.context}</p><div style={{background:T.bg,borderRadius:12,padding:14,marginBottom:10}}><p style={{fontFamily:Fb,fontSize:14,color:T.accent,fontWeight:600,margin:"0 0 3px"}}>🇮🇩 {card.meaning}</p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇬🇧 {card.meaningEn}</p></div><div style={{background:T.navySoft,borderRadius:12,padding:12}}><p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:0,lineHeight:1.5}}>💡 {card.usage}</p></div></div><Btn onClick={()=>{setPhase("quiz");setQuizOpts([...card.wrongOptions.slice(0,3),card.phrase].sort(()=>Math.random()-.5))}}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Got it — test me<ArrowRight size={18}/></span></Btn></FadeIn>}
+
+    {phase==="quiz"&&!frustMsg&&<FadeIn key={`q-${step}`}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:0}}>Which phrase means:</p><div style={{display:"flex",gap:6}}>{switchBtn}{helpBtn}</div></div><div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:16}}><p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:0,lineHeight:1.5,fontStyle:"italic"}}>"{card.meaning}"</p></div><div style={{display:"flex",flexDirection:"column",gap:9}}>{quizOpts.map((o,i)=>{const isSel=sel===i,cor=o===card.phrase;let bg=T.card,bdr=T.border;if(sel!==null){if(cor){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}return <button key={i} onClick={()=>doQuiz(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:sel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>{sel!==null&&cor&&<Check size={16} color={T.ok} strokeWidth={3}/>}{o}</button>})}</div>{sel!==null&&<FadeIn delay={80}><div style={{marginTop:16,padding:14,borderRadius:12,background:isOk?T.okSoft:T.hiSoft}}>{isOk?<p style={{fontFamily:Fb,fontSize:14,color:T.ok,fontWeight:500,margin:0}}>✨ {microWin}</p>:<div><p style={{fontFamily:Fb,fontSize:14,color:"#B8860B",fontWeight:500,margin:"0 0 5px"}}>{mistakeMsg}</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 3px"}}><strong>{card.phrase}</strong> → {card.meaningEn}</p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0,fontStyle:"italic"}}>"{card.context}"</p></div>}</div><div style={{marginTop:12}}><Btn onClick={next}>{isLast?"See results →":"Continue →"}</Btn></div></FadeIn>}</FadeIn>}
+
+    {phase==="fill"&&!frustMsg&&<FadeIn key={`f-${step}`}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><Badge color={T.teal} bg={T.tealSoft}>✏️ FILL IN THE BLANK</Badge><div style={{display:"flex",gap:6}}>{switchBtn}{helpBtn}</div></div><div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:10}}><p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:"0 0 8px",lineHeight:1.5}}>{card.fillBlank}</p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇮🇩 {card.meaning}</p></div>{showHint&&<FadeIn><div style={{background:T.hiSoft,borderRadius:10,padding:"8px 12px",marginBottom:8}}><p style={{fontFamily:Fb,fontSize:13,color:"#B8860B",margin:0}}>💡 Starts with: <strong>"{card.fillAnswer.split("|")[0].slice(0,Math.ceil(card.fillAnswer.split("|")[0].length/2))}..."</strong></p></div></FadeIn>}<input ref={fillRef} value={fillIn} onChange={e=>setFillIn(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&fillIn.trim())doFill()}} placeholder="Type your answer..." style={{width:"100%",padding:"14px 16px",borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",marginBottom:12}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/><div style={{display:"flex",gap:10}}>{!showHint&&<Btn v="secondary" onClick={()=>setShowHint(true)} style={{width:"auto",flex:"0 0 auto",padding:"14px 20px"}}>Hint</Btn>}<Btn onClick={doFill} disabled={!fillIn.trim()}>Check</Btn></div></FadeIn>}
+
+    {phase==="fill-fb"&&!frustMsg&&<FadeIn key={`ff-${step}`}><div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:12}}><p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:0,lineHeight:1.5}}>{card.fillBlank}</p></div><div style={{padding:14,borderRadius:12,background:isOk?T.okSoft:T.hiSoft,marginBottom:12}}>{isOk?<p style={{fontFamily:Fb,fontSize:14,color:T.ok,fontWeight:500,margin:0}}>✨ {microWin}</p>:<div><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:"#B8860B",margin:"0 0 5px"}}>{mistakeMsg}</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 2px"}}>You: <span style={{opacity:.6,textDecoration:"line-through"}}>{fillIn}</span></p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 5px"}}>Answer: <strong style={{color:T.ok}}>{card.fillAnswer.split("|")[0]}</strong></p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0,fontStyle:"italic"}}>"{card.context}"</p></div>}</div><Btn onClick={next}>{isLast?"See results →":"Continue →"}</Btn></FadeIn>}
+
+    {phase==="rearrange"&&!frustMsg&&<RearrangeEx card={card} onResult={ok=>{if(ok)good();else bad();next()}} onHelp={()=>setShowHelp(true)}/>}
+    {phase==="recall"&&!frustMsg&&<RecallEx card={card} onResult={ok=>{if(ok)good();else bad();next()}} onHelp={()=>setShowHelp(true)} autoHint={downgraded}/>}
+  </div>
+}
+
+function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Lesson complete!</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p></FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
+
+function TomorrowScreen({lppProfile,onNextLesson,onRestart}){const teaser=rnd(TT);const P=getLPP(lppProfile);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><Badge>COMING TOMORROW</Badge><h2 style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>{teaser.title}</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 32px",lineHeight:1.5}}>{teaser.hint}</p></FadeIn><FadeIn delay={300}><div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:40,height:40,borderRadius:10,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{P.icon}</div><div><p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Your learning style</p><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:T.text,margin:0}}>{P.label}</p></div></div></div></FadeIn><FadeIn delay={500}><div style={{background:`linear-gradient(135deg,${P.color}08,${T.hi}15)`,borderRadius:16,padding:18,marginBottom:32,border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Heart size={16} color={P.color}/><span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:P.color}}>What's next</span></div><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{P.tomorrowHook}</p></div></FadeIn><FadeIn delay={700}><Btn onClick={onNextLesson}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>One more lesson<ArrowRight size={18}/></span></Btn><button onClick={onRestart} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
+
+/* ═══════════════════════════════════════════════
+   MAIN APP — with API auth + persistence
+   ═══════════════════════════════════════════════ */
+function App(){
+  const[loading,setLoading]=useState(true);
+  const[authed,setAuthed]=useState(false);
+  const[screen,setScreen]=useState("welcome");
+  const[lpp,setLpp]=useState(null);
+  const[level,setLevel]=useState("B1");
+  const[lScore,setLScore]=useState({s:0,t:0});
+  const[streak,setStreak]=useState(0);
+  const[lessons,setLessons]=useState(0);
+  const[lessonCards,setLessonCards]=useState([]);
+  const[cardStats,setCardStats]=useState({});
+
+  useEffect(()=>{
+    (async()=>{
+      if(!getToken()){setLoading(false);return}
+      const d=await apiLoad();
+      if(d&&d.lessonsCompleted>0){
+        const s=calcStreak(d.lastDate,d.streak);
+        setStreak(s);setLpp(d.lppProfile);setLevel(d.userLevel);setLessons(d.lessonsCompleted);setCardStats(d.cardStats||{});
+        setScreen("welcome-back");
+      }
+      setAuthed(true);setLoading(false);
+    })();
+  },[]);
+
+  const onAuth=async()=>{
+    const d=await apiLoad();
+    if(d&&d.lessonsCompleted>0){
+      const s=calcStreak(d.lastDate,d.streak);
+      setStreak(s);setLpp(d.lppProfile);setLevel(d.userLevel);setLessons(d.lessonsCompleted);setCardStats(d.cardStats||{});
+      setScreen("welcome-back");
+    }else{setScreen("welcome")}
+    setAuthed(true);
+  };
+
+  const onLogout=()=>{clearToken();setAuthed(false);setScreen("welcome");setLpp(null);setLevel("B1");setStreak(0);setLessons(0);setCardStats({})};
+
+  const persist=async(nl,prof,lv,newStats)=>{
+    const t=getToday(),d=await apiLoad(),prev=d?d.streak:0,pd=d?d.lastDate:null;
+    let s;if(pd===t)s=prev;else if(pd===new Date(Date.now()-864e5).toISOString().split("T")[0])s=prev+1;else s=1;
+    await apiSave({streak:s,lastDate:t,lessonsCompleted:nl,lppProfile:prof,userLevel:lv,cardStats:newStats});setStreak(s);
+  };
+
+  const onGoal=id=>{setLpp(id);setScreen("placement")};
+  const onPlace=lv=>{setLevel(lv);setScreen("level-reveal")};
+  const onLesson=async(score,total,cards,results)=>{
+    const ns={...cardStats};for(const r of results){ns[r.cardId]=updateSRS(ns[r.cardId]||newCardStats(),r.correct)}
+    setCardStats(ns);const nl=lessons+1;setLessons(nl);setLScore({s:score,t:total});setLessonCards(cards);await persist(nl,lpp,level,ns);setScreen("celebration");
+  };
+  const onReset=async()=>{await apiReset();setScreen("welcome");setLpp(null);setLevel("B1");setStreak(0);setLessons(0);setLessonCards([]);setCardStats({})};
+
+  const masteredCount=Object.values(cardStats).filter(s=>s.mastery>=4).length;
+  const seenCount=Object.values(cardStats).filter(s=>s.seen>0).length;
+
+  if(loading) return <div style={{maxWidth:440,margin:"0 auto",background:T.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><p style={{fontFamily:Fd,fontSize:18,color:T.muted,fontStyle:"italic"}}>Loading...</p></div>;
+  if(!authed) return <div style={{maxWidth:440,margin:"0 auto"}}><AuthScreen onAuth={onAuth}/></div>;
+
+  return <div style={{maxWidth:440,margin:"0 auto",background:T.bg,minHeight:"100vh",position:"relative",overflow:"hidden"}}>
+    {screen==="welcome"&&<WelcomeScreen onStart={()=>setScreen("goal")}/>}
+    {screen==="welcome-back"&&<WelcomeBackScreen streak={streak} level={level} phrases={seenCount} masteredCount={masteredCount} lpp={lpp} onContinue={()=>setScreen("lesson")} onReset={onReset} onLogout={onLogout}/>}
+    {screen==="goal"&&<GoalScreen onSelect={onGoal}/>}
+    {screen==="placement"&&<PlacementScreen onComplete={onPlace}/>}
+    {screen==="level-reveal"&&<LevelRevealScreen level={level} onContinue={()=>setScreen("lesson")}/>}
+    {screen==="lesson"&&<LessonScreen onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
+    {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} onContinue={()=>setScreen("tomorrow")}/>}
+    {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={()=>setScreen("lesson")} onRestart={onReset}/>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
