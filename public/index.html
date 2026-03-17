@@ -533,7 +533,7 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
     return result;
   });
 
-  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises
+  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises, recall, retest
   const[compIdx,setCompIdx]=useState(0);
   const[compSel,setCompSel]=useState(null);
   const[compShow,setCompShow]=useState(false);
@@ -551,6 +551,31 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
   const[showHint,setShowHint]=useState(false);
   const[quizOpts,setQuizOpts]=useState([]);
   const fillRef=useRef(null);
+
+  // Recall check state
+  const[rcIdx,setRcIdx]=useState(0);
+  const[rcSel,setRcSel]=useState(null);
+  const[rcShow,setRcShow]=useState(false);
+  const[rcScore,setRcScore]=useState(0);
+  const[rcWrong,setRcWrong]=useState([]); // phrases user got wrong
+  const[rcOpts,setRcOpts]=useState([]);
+  const[rcMsg,setRcMsg]=useState(""); // message for celebration
+  // Retest state (fill-in-the-blank for missed recall)
+  const[rtIdx,setRtIdx]=useState(0);
+  const[rtInput,setRtInput]=useState("");
+  const[rtDone,setRtDone]=useState(false);
+  const[rtOk,setRtOk]=useState(null);
+  const rtRef=useRef(null);
+
+  // Build unique phrase list for recall (one per target phrase, not per exercise)
+  const[rcPhrases]=useState(()=>{
+    const seen=new Set();
+    return exCards.filter(ec=>{
+      const k=ec.card.phrase;
+      if(seen.has(k))return false;
+      seen.add(k);return true;
+    });
+  });
 
   const P=getLPP(lpp);
   const curExCard=exCards[exIdx];
@@ -614,9 +639,19 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
     const r={card_id:curExCard.card_id,exercise_id:curExCard.card.id+"_"+curExCard.exType,encounter_type:curExCard.exType,result:"incorrect",response_time_ms:elapsed};
     resultsRef.current.push(r);apiLogEncounter(r);
   };
+  const buildRcOpts=(phraseIdx)=>{
+    const cur=rcPhrases[phraseIdx];if(!cur)return[];
+    const correct=cur.card.meaning||cur.card.meaningEn||"";
+    // Get wrong meanings from other cards in the session, then from allCards
+    const wrongs=[];
+    rcPhrases.forEach((ec,i)=>{if(i!==phraseIdx){const m=ec.card.meaning||ec.card.meaningEn;if(m)wrongs.push(m)}});
+    (cards||[]).forEach(c=>{const m=c.meaning||c.data?.meaning;if(m&&m!==correct&&!wrongs.includes(m))wrongs.push(m)});
+    return[correct,...wrongs.slice(0,3)].sort(()=>Math.random()-.5);
+  };
+  const startRecall=()=>{setStage("recall");setRcIdx(0);setRcSel(null);setRcShow(false);setRcScore(0);setRcWrong([]);setRcOpts(buildRcOpts(0))};
   const exNext=()=>{
     if(exIdx<exCards.length-1){const ni=exIdx+1;setExIdx(ni);initExercise(ni)}
-    else{onComplete(scoreRef.current,Math.max(exCards.length,1),resultsRef.current)}
+    else{startRecall()}
   };
   const doQuiz=(opt,i)=>{if(sel!==null)return;setSel(i);const ok=opt===curExCard.card.phrase;setIsOk(ok);if(ok)exGood();else exBad()};
   const doFill=()=>{const a=fillIn.trim().toLowerCase().replace(/[.,!?]/g,""),parts=curExCard.card.fillAnswer.toLowerCase().replace(/[.,!?]/g,"").split("|"),ok=parts.some(p=>a.includes(p.trim()));setIsOk(ok);if(ok)exGood();else exBad();setExPhase("fill-fb")};
@@ -782,10 +817,128 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
     </div>;
   }
 
-  // No exercises available — finish session
+  // No exercises available — go straight to recall
   if(stage==="exercises"&&!curExCard){
-    onComplete(compScore,Math.max(comprehension.length,1),resultsRef.current);
+    startRecall();
     return null;
+  }
+
+  // ─── STAGE: RECALL CHECK ───
+  if(stage==="recall"){
+    const rcCur=rcPhrases[rcIdx];
+    if(!rcCur){
+      // All recall done — check score
+      if(rcScore>=2){
+        const msg=rcScore>=rcPhrases.length?"Perfect recall — these phrases are yours now.":"Solid — "+rcScore+" out of "+rcPhrases.length+" locked in.";
+        onComplete(scoreRef.current+rcScore,exCards.length+rcPhrases.length,resultsRef.current,msg);
+      }else{
+        setStage("retest");setRtIdx(0);setRtInput("");setRtDone(false);setRtOk(null);
+      }
+      return null;
+    }
+    const card=rcCur.card;
+    const correctMeaning=card.meaning||card.meaningEn||"";
+    // Show context sentence with phrase highlighted
+    const ctx=card.context||"";
+    const phraseRe=new RegExp("("+card.phrase.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","i");
+    const ctxParts=ctx.split(phraseRe);
+
+    const pickRc=(opt,i)=>{
+      if(rcSel!==null)return;
+      setRcSel(i);setRcShow(true);
+      const correct=opt===correctMeaning;
+      if(correct)setRcScore(s=>s+1);
+      else setRcWrong(w=>[...w,rcCur]);
+      apiLogEncounter({card_id:rcCur.card_id,encounter_type:"recall_check",result:correct?"correct":"incorrect"});
+      setTimeout(()=>{
+        const ni=rcIdx+1;setRcIdx(ni);setRcSel(null);setRcShow(false);
+        if(ni<rcPhrases.length)setRcOpts(buildRcOpts(ni));
+      },1200);
+    };
+
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.navySoft}}>
+      <FadeIn>
+        <Badge color={T.navy} bg={T.card}>🧠 RECALL CHECK</Badge>
+        <p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:"8px 0 4px",fontWeight:500}}>No hints this time — let's see what stuck</p>
+        <Bar current={rcIdx+1} total={rcPhrases.length}/>
+        <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"6px 0 16px"}}>Recall {rcIdx+1}/{rcPhrases.length}</p>
+      </FadeIn>
+      <FadeIn key={`rc-${rcIdx}`}>
+        <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:16}}>
+          <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.7,margin:0}}>
+            {ctxParts.map((part,i)=>phraseRe.test(part)?
+              <strong key={i} style={{color:T.accent,background:T.accentSoft,borderRadius:4,padding:"2px 4px"}}>{part}</strong>:
+              <span key={i}>{part}</span>
+            )}
+          </p>
+        </div>
+        <p style={{fontFamily:Fb,fontSize:15,fontWeight:500,color:T.navy,margin:"0 0 14px"}}>What does the highlighted phrase mean here?</p>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          {rcOpts.map((o,i)=>{
+            const isCorrect=o===correctMeaning;
+            const isSel=rcSel===i;
+            let bg=T.card,bdr=T.border;
+            if(rcShow){if(isCorrect){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}
+            return <button key={i} onClick={()=>pickRc(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:rcSel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>
+              {rcShow&&isCorrect&&<Check size={16} color={T.ok} strokeWidth={3}/>}{o}
+            </button>
+          })}
+        </div>
+      </FadeIn>
+    </div>;
+  }
+
+  // ─── STAGE: RETEST (fill-in-the-blank for missed recall phrases) ───
+  if(stage==="retest"){
+    const rtCur=rcWrong[rtIdx];
+    if(!rtCur){
+      onComplete(scoreRef.current+rcScore,exCards.length+rcPhrases.length,resultsRef.current,"You got there — that extra practice matters.");
+      return null;
+    }
+    const card=rtCur.card;
+
+    const doRt=()=>{
+      const a=rtInput.trim().toLowerCase().replace(/[.,!?]/g,"");
+      const answers=(card.fillAnswer||card.phrase).toLowerCase().replace(/[.,!?]/g,"").split("|");
+      const ok=answers.some(p=>a.includes(p.trim()));
+      setRtOk(ok);setRtDone(true);
+      apiLogEncounter({card_id:rtCur.card_id,encounter_type:"recall_retest",result:ok?"correct":"incorrect"});
+      if(ok)setRcScore(s=>s+1);
+    };
+    const rtNext=()=>{
+      const ni=rtIdx+1;setRtIdx(ni);setRtInput("");setRtDone(false);setRtOk(null);
+    };
+
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.navySoft}}>
+      <FadeIn>
+        <Badge color={T.navy} bg={T.card}>🧠 REVIEW</Badge>
+        <p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:"8px 0 16px",fontWeight:500}}>Almost! Let's review the ones you missed.</p>
+      </FadeIn>
+      <FadeIn key={`rt-${rtIdx}`}>
+        {!rtDone&&<>
+          <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:12}}>
+            <p style={{fontFamily:Fd,fontSize:18,fontWeight:600,color:T.accent,margin:"0 0 8px",fontStyle:"italic"}}>"{card.phrase}"</p>
+            <p style={{fontFamily:Fb,fontSize:14,color:T.accent,fontWeight:600,margin:"0 0 3px"}}>🇮🇩 {card.meaning}</p>
+            <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇬🇧 {card.meaningEn}</p>
+          </div>
+          <p style={{fontFamily:Fb,fontSize:14,color:T.navy,margin:"0 0 10px",fontWeight:500}}>Now fill in the blank:</p>
+          <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:12}}>
+            <p style={{fontFamily:Fd,fontSize:16,fontWeight:500,color:T.text,margin:0,lineHeight:1.5}}>{card.fillBlank||card.context}</p>
+          </div>
+          <input ref={rtRef} value={rtInput} onChange={e=>setRtInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&rtInput.trim())doRt()}} placeholder="Type your answer..." style={{width:"100%",padding:"14px 16px",borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",marginBottom:12}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <Btn onClick={doRt} disabled={!rtInput.trim()}>Check</Btn>
+        </>}
+        {rtDone&&<FadeIn>
+          <div style={{padding:14,borderRadius:12,background:rtOk?T.okSoft:T.hiSoft,marginBottom:12}}>
+            {rtOk?<p style={{fontFamily:Fb,fontSize:14,color:T.ok,fontWeight:500,margin:0}}>✨ Got it!</p>:<div>
+              <p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:"#B8860B",margin:"0 0 5px"}}>The answer was:</p>
+              <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0}}><strong style={{color:T.ok}}>{(card.fillAnswer||card.phrase).split("|")[0]}</strong></p>
+            </div>}
+          </div>
+          <Btn onClick={()=>{if(rtOk){rtNext()}else{setRtDone(false);setRtInput("")}}}>{rtOk?"Continue →":"Try again"}</Btn>
+        </FadeIn>}
+      </FadeIn>
+    </div>;
   }
 
   return null;
@@ -815,7 +968,7 @@ function GenericQuiz({options,correct,onResult}){
   </div>
 }
 
-function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Session complete!</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p></FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
+function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,recallMsg,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Session complete!</h2>{recallMsg?<p style={{fontFamily:Fb,fontSize:15,color:T.navy,textAlign:"center",margin:"0 0 28px",fontWeight:500}}>{recallMsg}</p>:<p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p>}</FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
 
 function TomorrowScreen({lppProfile,onNextLesson,onRestart}){const teaser=rnd(TT);const P=getLPP(lppProfile);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><Badge>COMING TOMORROW</Badge><h2 style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>{teaser.title}</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 32px",lineHeight:1.5}}>{teaser.hint}</p></FadeIn><FadeIn delay={300}><div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:40,height:40,borderRadius:10,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{P.icon}</div><div><p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Your learning style</p><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:T.text,margin:0}}>{P.label}</p></div></div></div></FadeIn><FadeIn delay={500}><div style={{background:`linear-gradient(135deg,${P.color}08,${T.hi}15)`,borderRadius:16,padding:18,marginBottom:32,border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Heart size={16} color={P.color}/><span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:P.color}}>What's next</span></div><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{P.tomorrowHook}</p></div></FadeIn><FadeIn delay={700}><Btn onClick={onNextLesson}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>One more session<ArrowRight size={18}/></span></Btn><button onClick={onRestart} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
 
@@ -837,6 +990,7 @@ function App(){
   const[isAdmin,setIsAdminState]=useState(false);
   const[sessionData,setSessionData]=useState(null);
   const[sessionLoading,setSessionLoading]=useState(false);
+  const[recallMsg,setRecallMsg]=useState("");
 
   const loadCards=async()=>{
     const cards=await apiLoadCards();
@@ -897,8 +1051,9 @@ function App(){
     setCardStats(ns);const nl=lessons+1;setLessons(nl);setLScore({s:score,t:total});setLessonCards(cards);await persist(nl,lpp,level,ns);setScreen("celebration");
   };
 
-  const onReadingComplete=(score,total,results)=>{
+  const onReadingComplete=(score,total,results,rcMsg)=>{
     const nl=lessons+1;setLessons(nl);setLScore({s:score,t:Math.max(total,1)});setLessonCards([]);
+    setRecallMsg(rcMsg||"");
     persist(nl,lpp,level,cardStats);
     setSessionData(null);setScreen("celebration");
   };
@@ -919,7 +1074,7 @@ function App(){
     {screen==="level-reveal"&&<LevelRevealScreen level={level} onContinue={()=>setScreen("lesson")}/>}
     {screen==="lesson"&&<LessonScreen cards={allCards} onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
     {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} cards={allCards} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp}/>}
-    {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} onContinue={()=>setScreen("tomorrow")}/>}
+    {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} recallMsg={recallMsg} onContinue={()=>setScreen("tomorrow")}/>}
     {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={startSession} onRestart={onReset}/>}
     {screen==="admin"&&<AdminPanel onBack={()=>setScreen(lessons>0?"welcome-back":"welcome")}/>}
     {sessionLoading&&<div style={{position:"fixed",inset:0,background:"rgba(251,247,240,0.9)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center"}}><div style={{width:48,height:48,borderRadius:24,background:`linear-gradient(135deg,${T.accent},${T.hi})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><BookOpen size={22} color="#fff"/></div><p style={{fontFamily:Fd,fontSize:18,color:T.muted,fontStyle:"italic"}}>Preparing your session...</p></div></div>}
