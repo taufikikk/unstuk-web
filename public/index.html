@@ -9,7 +9,7 @@
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:'DM Sans',-apple-system,sans-serif;background:#FBF7F0;-webkit-font-smoothing:antialiased}
-  input,button{font-family:inherit}
+  input,button,textarea{font-family:inherit}
   @keyframes cF{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}
 </style>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -20,8 +20,6 @@
 <div id="root"></div>
 <!-- Config: edit config.js to set your Railway API URL -->
 <script src="/config.js"></script>
-<!-- Cards data must load BEFORE the React app -->
-<script src="/cards.js"></script>
 <script type="text/babel" data-type="module">
 const {useState,useEffect,useRef,useCallback}=React;
 
@@ -55,6 +53,8 @@ function setToken(t){localStorage.setItem("eng_token",t)}
 function clearToken(){localStorage.removeItem("eng_token")}
 function getUsername(){return localStorage.getItem("eng_user")||""}
 function setUsername(u){localStorage.setItem("eng_user",u)}
+function getIsAdmin(){return localStorage.getItem("eng_admin")==="true"}
+function setIsAdmin(v){localStorage.setItem("eng_admin",v?"true":"false")}
 
 async function apiLoad(){
   const t=getToken();if(!t)return null;
@@ -75,12 +75,73 @@ async function apiReset(){
 async function apiRegister(username,password){
   const r=await fetch(window.API_URL+"/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
   const j=await r.json();if(!r.ok)throw new Error(j.error||"Registration failed");
-  setToken(j.token);setUsername(j.username);return j;
+  setToken(j.token);setUsername(j.username);setIsAdmin(j.is_admin||false);return j;
 }
 async function apiLogin(username,password){
   const r=await fetch(window.API_URL+"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
   const j=await r.json();if(!r.ok)throw new Error(j.error||"Login failed");
-  setToken(j.token);setUsername(j.username);return j;
+  setToken(j.token);setUsername(j.username);setIsAdmin(j.is_admin||false);return j;
+}
+
+/* ═══════════════════════════════════════════════
+   NEW API HELPERS (cards, admin, reading module)
+   ═══════════════════════════════════════════════ */
+async function apiLoadCards(){
+  try{const r=await fetch(window.API_URL+"/api/cards");const j=await r.json();return j.cards||[]}catch{return[]}
+}
+async function apiUploadCards(cards){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/admin/cards/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({cards})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Upload failed");return j;
+}
+async function apiAdminStats(){
+  const t=getToken();if(!t)return null;
+  const r=await fetch(window.API_URL+"/api/admin/stats",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?await r.json():null;
+}
+async function apiDeleteCard(cardId){
+  const t=getToken();
+  const r=await fetch(window.API_URL+"/api/admin/cards/"+cardId,{method:"DELETE",headers:{"Authorization":"Bearer "+t}});
+  return r.ok;
+}
+async function apiUploadPassages(passages){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/admin/passages/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({passages})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Upload failed");return j;
+}
+async function apiGetPassages(){
+  const t=getToken();if(!t)return[];
+  const r=await fetch(window.API_URL+"/api/admin/passages",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?(await r.json()).passages||[]:[];
+}
+async function apiDeletePassage(id){
+  const t=getToken();
+  const r=await fetch(window.API_URL+"/api/admin/passages/"+id,{method:"DELETE",headers:{"Authorization":"Bearer "+t}});
+  return r.ok;
+}
+async function apiUploadExercises(exercises){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/admin/exercises/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({exercises})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Upload failed");return j;
+}
+async function apiGetExercises(){
+  const t=getToken();if(!t)return[];
+  const r=await fetch(window.API_URL+"/api/admin/exercises",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?(await r.json()).exercises||[]:[];
+}
+async function apiContentStats(){
+  const t=getToken();if(!t)return null;
+  const r=await fetch(window.API_URL+"/api/admin/content-stats",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?await r.json():null;
+}
+async function apiComposeSession(){
+  const t=getToken();if(!t)return null;
+  const r=await fetch(window.API_URL+"/api/session/compose",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?await r.json():null;
+}
+async function apiLogEncounter(data){
+  const t=getToken();if(!t)return;
+  try{await fetch(window.API_URL+"/api/encounter",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify(data)})}catch{}
 }
 
 function getToday(){return new Date().toISOString().split("T")[0]}
@@ -110,12 +171,6 @@ function buildLesson(allCards,statsMap){
 function exerciseForMastery(m){if(m<=0)return"learn";if(m===1)return"quiz";if(m===2)return"fill";if(m===3)return"rearrange";return"recall"}
 
 const ENCOURAGE=["This one's tough — let's make it easier.","No rush. Let's try a simpler version.","Tricky phrase! Here's a gentler way.","Even advanced learners struggle here.","Let's slow down — you'll get this."];
-
-/* ═══════════════════════════════════════════════
-   148 FLASHCARDS (abbreviated — same data as v3)
-   ═══════════════════════════════════════════════ */
-/* NOTE: This file includes all 148 cards inline below.
-   They are loaded from a separate script tag for readability. */
 
 /* ═══════════════════════════════════════════════
    LPP + Messages + Theme (same as v3)
@@ -164,7 +219,7 @@ function FrustrationBanner({message}){return <FadeIn><div style={{background:T.p
    ═══════════════════════════════════════════════ */
 function AuthScreen({onAuth}){
   const[mode,setMode]=useState("login");
-  const[username,setUsername]=useState("");
+  const[username,setUN]=useState("");
   const[password,setPassword]=useState("");
   const[error,setError]=useState("");
   const[loading,setLoading]=useState(false);
@@ -186,7 +241,7 @@ function AuthScreen({onAuth}){
       <div style={{background:T.card,borderRadius:20,padding:28,boxShadow:T.shadow}}>
         {error&&<div style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:10,padding:"10px 14px",marginBottom:16}}><p style={{fontFamily:Fb,fontSize:13,color:"#C0392B",margin:0}}>{error}</p></div>}
         <label style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.muted,display:"block",marginBottom:6}}>Username</label>
-        <input value={username} onChange={e=>setUsername(e.target.value)} placeholder="e.g. taufik" autoComplete="username"
+        <input value={username} onChange={e=>setUN(e.target.value)} placeholder="e.g. taufik" autoComplete="username"
           style={{width:"100%",padding:"12px 16px",borderRadius:10,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.bg,outline:"none",boxSizing:"border-box",marginBottom:16}}
           onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
         <label style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.muted,display:"block",marginBottom:6}}>Password</label>
@@ -207,12 +262,7 @@ function AuthScreen({onAuth}){
 }
 
 /* ═══════════════════════════════════════════════
-   The cards are loaded from the CARDS global
-   (injected via a separate script tag below)
-   ═══════════════════════════════════════════════ */
-
-/* ═══════════════════════════════════════════════
-   EXERCISE COMPONENTS (same as v3)
+   EXERCISE COMPONENTS
    ═══════════════════════════════════════════════ */
 function RearrangeEx({card,onResult,onHelp}){const[pool,setPool]=useState([]);const[built,setBuilt]=useState([]);const[done,setDone]=useState(false);const[ok,setOk]=useState(null);const[msg,setMsg]=useState("");useEffect(()=>{setPool([...card.rearrange.words]);setBuilt([]);setDone(false);setOk(null)},[card.id]);const add=(w,i)=>{if(done)return;const nb=[...built,w],np=pool.filter((_,j)=>j!==i);setBuilt(nb);setPool(np);if(np.length===0){const u=nb.join(" ").toLowerCase().replace(/[^a-z0-9' ]/g,"").trim(),t=card.rearrange.sentence.toLowerCase().replace(/[^a-z0-9' ]/g,"").trim();setOk(u===t);setDone(true);setMsg(u===t?rnd(MW):rnd(MM))}};const rm=i=>{if(done)return;setPool([...pool,built[i]]);setBuilt(built.filter((_,j)=>j!==i))};const reset=()=>{setPool([...card.rearrange.words]);setBuilt([]);setDone(false);setOk(null)};
   return <FadeIn key={`r-${card.id}`}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><Badge color={T.purple} bg={T.purpleSoft}>🧩 REARRANGE</Badge><button onClick={onHelp} style={{background:T.navySoft,border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontFamily:Fb,fontSize:12,fontWeight:600,color:T.navy}}><HelpCircle size={14}/>Help</button></div><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"4px 0 10px"}}>Tap words in the right order:</p><div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:12}}><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px"}}>🇮🇩 {card.meaning}</p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇬🇧 {card.meaningEn}</p></div><div style={{minHeight:48,background:T.card,borderRadius:12,border:`2px dashed ${built.length?T.accent:T.border}`,padding:10,marginBottom:10,display:"flex",flexWrap:"wrap",gap:6}}>{!built.length&&<span style={{fontFamily:Fb,fontSize:14,color:T.border}}>Tap words below...</span>}{built.map((w,i)=><button key={`b${i}`} onClick={()=>rm(i)} style={{fontFamily:Fb,fontSize:14,fontWeight:500,background:T.accentSoft,color:T.accent,border:`1.5px solid ${T.accent}40`,borderRadius:7,padding:"5px 11px",cursor:done?"default":"pointer"}}>{w}</button>)}</div><div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>{pool.map((w,i)=><button key={`p${i}`} onClick={()=>add(w,i)} style={{fontFamily:Fb,fontSize:14,fontWeight:500,background:T.card,color:T.text,border:`1.5px solid ${T.border}`,borderRadius:7,padding:"5px 11px",cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,.05)"}}>{w}</button>)}</div>{!done&&built.length>0&&<button onClick={reset} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",display:"flex",alignItems:"center",gap:5,marginBottom:8}}><RefreshCw size={13}/>Reset</button>}{done&&<FadeIn><div style={{padding:14,borderRadius:12,background:ok?T.okSoft:T.hiSoft,marginBottom:12}}>{ok?<p style={{fontFamily:Fb,fontSize:14,color:T.ok,fontWeight:500,margin:0}}>✨ {msg}</p>:<div><p style={{fontFamily:Fb,fontSize:14,color:"#B8860B",fontWeight:500,margin:"0 0 5px"}}>{msg}</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0}}>Correct: <strong style={{color:T.ok}}>{card.rearrange.sentence}</strong></p></div>}</div><Btn onClick={()=>onResult(ok)}>Continue →</Btn></FadeIn>}</FadeIn>
@@ -223,14 +273,157 @@ function RecallEx({card,onResult,onHelp,autoHint=false}){const[input,setInput]=u
 }
 
 /* ═══════════════════════════════════════════════
-   ALL SCREENS (same as v3, with F.d→Fd, F.b→Fb)
-   For brevity, these are the same components with
-   minor variable name changes for the standalone context.
+   ADMIN PANEL
+   ═══════════════════════════════════════════════ */
+function AdminPanel({onBack}){
+  const[tab,setTab]=useState("cards");
+  const[cards,setCards]=useState([]);
+  const[passages,setPassages]=useState([]);
+  const[exercises,setExercises]=useState([]);
+  const[stats,setStats]=useState(null);
+  const[contentStats,setContentStats]=useState(null);
+  const[loading,setLoading]=useState(true);
+  const[msg,setMsg]=useState("");
+  const[jsonInput,setJsonInput]=useState("");
+
+  const loadData=async()=>{
+    setLoading(true);
+    const[c,p,e,s,cs]=await Promise.all([
+      apiLoadCards(),apiGetPassages(),apiGetExercises(),apiAdminStats(),apiContentStats()
+    ]);
+    setCards(c);setPassages(p);setExercises(e);setStats(s);setContentStats(cs);
+    setLoading(false);
+  };
+  useEffect(()=>{loadData()},[]);
+
+  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),3000)};
+
+  const uploadCards=async()=>{
+    try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadCards(arr);flash(`Uploaded ${arr.length} cards`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
+  };
+  const uploadPassages=async()=>{
+    try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadPassages(arr);flash(`Uploaded ${arr.length} passages`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
+  };
+  const uploadExercises=async()=>{
+    try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadExercises(arr);flash(`Uploaded ${arr.length} exercises`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
+  };
+  const deleteCard=async(id)=>{if(await apiDeleteCard(id)){flash("Card deleted");loadData()}};
+  const deletePassage=async(id)=>{if(await apiDeletePassage(id)){flash("Passage deleted");loadData()}};
+
+  const tabs=[
+    {id:"cards",label:"Cards"},
+    {id:"passages",label:"Passages"},
+    {id:"exercises",label:"Exercises"},
+    {id:"stats",label:"Stats"}
+  ];
+
+  const tabStyle=(id)=>({
+    background:tab===id?T.accent:"transparent",color:tab===id?"#fff":T.muted,
+    border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",
+    fontFamily:Fb,fontSize:13,fontWeight:600
+  });
+
+  const inputStyle={width:"100%",minHeight:120,padding:14,borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:"monospace",fontSize:13,color:T.text,background:T.bg,outline:"none",boxSizing:"border-box",resize:"vertical"};
+
+  return <div style={{minHeight:"100vh",padding:20,background:T.bg}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+      <button onClick={onBack} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"8px 14px",cursor:"pointer",fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text}}>← Back</button>
+      <h2 style={{fontFamily:Fd,fontSize:24,fontWeight:700,color:T.text,margin:0}}>Admin Panel</h2>
+    </div>
+
+    {msg&&<div style={{background:T.okSoft,borderRadius:10,padding:"10px 16px",marginBottom:16}}><p style={{fontFamily:Fb,fontSize:13,color:T.ok,margin:0,fontWeight:500}}>{msg}</p></div>}
+
+    <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap"}}>
+      {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={tabStyle(t.id)}>{t.label}</button>)}
+    </div>
+
+    {loading&&<p style={{fontFamily:Fb,fontSize:14,color:T.muted}}>Loading...</p>}
+
+    {!loading&&tab==="cards"&&<div>
+      <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
+        <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Cards (JSON)</h3>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"id":"c1","phrase":"...","meaning":"..."}]' style={inputStyle}/>
+        <div style={{marginTop:12}}><Btn onClick={uploadCards} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
+      </div>
+      <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{cards.length} Cards</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {cards.slice(0,50).map(c=><div key={c.id||c.card_id} style={{background:T.card,borderRadius:12,padding:14,boxShadow:T.shadow,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.phrase||c.data?.phrase||c.card_id||"—"}</p>
+            <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"2px 0 0"}}>{c.meaningEn||c.data?.meaningEn||""}</p>
+          </div>
+          <button onClick={()=>deleteCard(c.id||c.card_id)} style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:"#C0392B",flexShrink:0,marginLeft:10}}>Delete</button>
+        </div>)}
+        {cards.length>50&&<p style={{fontFamily:Fb,fontSize:13,color:T.muted}}>...and {cards.length-50} more</p>}
+      </div>
+    </div>}
+
+    {!loading&&tab==="passages"&&<div>
+      <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
+        <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Passages (JSON)</h3>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"passage_id":"p1","level":"B1","title":"...","data":{...}}]' style={inputStyle}/>
+        <div style={{marginTop:12}}><Btn onClick={uploadPassages} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
+      </div>
+      <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{passages.length} Passages</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {passages.map(p=><div key={p.id||p.passage_id} style={{background:T.card,borderRadius:12,padding:14,boxShadow:T.shadow,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0}}>{p.title||p.passage_id||"—"}</p>
+            <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"2px 0 0"}}>{p.level||""} {p.topic?`· ${p.topic}`:""} {p.data?.target_phrases?`· ${p.data.target_phrases.length} phrases`:""}</p>
+          </div>
+          <button onClick={()=>deletePassage(p.id||p.passage_id)} style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:"#C0392B",flexShrink:0,marginLeft:10}}>Delete</button>
+        </div>)}
+      </div>
+    </div>}
+
+    {!loading&&tab==="exercises"&&<div>
+      <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
+        <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Exercises (JSON)</h3>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"card_id":1,"exercise_type":"fill_blank","exercise_id":"e1","data":{...}}]' style={inputStyle}/>
+        <div style={{marginTop:12}}><Btn onClick={uploadExercises} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
+      </div>
+      <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{exercises.length} Exercises</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {exercises.slice(0,50).map((ex,i)=><div key={ex.exercise_id||i} style={{background:T.card,borderRadius:12,padding:14,boxShadow:T.shadow}}>
+          <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0}}>{ex.exercise_id||"—"}</p>
+          <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"2px 0 0"}}>Type: {ex.exercise_type||"—"} · Card: {ex.card_id||"—"}</p>
+        </div>)}
+        {exercises.length>50&&<p style={{fontFamily:Fb,fontSize:13,color:T.muted}}>...and {exercises.length-50} more</p>}
+      </div>
+    </div>}
+
+    {!loading&&tab==="stats"&&<div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+        {[
+          {label:"Users",val:stats?.user_count??"-",color:T.accent,bg:T.accentSoft},
+          {label:"Cards",val:cards.length,color:T.ok,bg:T.okSoft},
+          {label:"Passages",val:contentStats?.passage_count??passages.length,color:T.purple,bg:T.purpleSoft},
+          {label:"Exercises",val:contentStats?.exercise_count??exercises.length,color:T.teal,bg:T.tealSoft},
+        ].map((s,i)=><div key={i} style={{background:T.card,borderRadius:14,padding:18,boxShadow:T.shadow,textAlign:"center"}}>
+          <div style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:s.color}}>{s.val}</div>
+          <div style={{fontFamily:Fb,fontSize:12,color:T.muted,marginTop:4}}>{s.label}</div>
+        </div>)}
+      </div>
+      {contentStats?.encounter_count!=null&&<div style={{background:T.card,borderRadius:14,padding:18,boxShadow:T.shadow}}>
+        <div style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:T.navy}}>{contentStats.encounter_count}</div>
+        <div style={{fontFamily:Fb,fontSize:12,color:T.muted,marginTop:4}}>Encounters Logged</div>
+      </div>}
+    </div>}
+  </div>
+}
+
+/* ═══════════════════════════════════════════════
+   ALL SCREENS
    ═══════════════════════════════════════════════ */
 
-function WelcomeScreen({onStart}){return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}><FadeIn><div style={{width:64,height:64,borderRadius:16,background:`linear-gradient(135deg,${T.accent},${T.hi})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 4px 20px ${T.accent}33`}}><BookOpen size={28} color="#fff"/></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:36,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 12px",lineHeight:1.15}}><span style={{color:T.accent,fontStyle:"italic"}}>Unstuck</span><br/>English that people<br/>actually speak</h1></FadeIn><FadeIn delay={300}><p style={{fontFamily:Fb,fontSize:16,color:T.muted,textAlign:"center",margin:"0 0 40px",lineHeight:1.6,maxWidth:320}}>The app for people who've tried everything.<br/>Real phrases. Real progress. No quitting.</p></FadeIn><FadeIn delay={450} style={{width:"100%",maxWidth:340}}><Btn onClick={onStart}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Start learning<ChevronRight size={18}/></span></Btn></FadeIn></div>}
+function WelcomeScreen({onStart,isAdmin,onAdmin}){return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg,position:"relative"}}>
+  {isAdmin&&<button onClick={onAdmin} style={{position:"absolute",top:20,right:20,background:T.card,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"8px 14px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,boxShadow:T.shadow}}>Admin Panel</button>}
+  <FadeIn><div style={{width:64,height:64,borderRadius:16,background:`linear-gradient(135deg,${T.accent},${T.hi})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 4px 20px ${T.accent}33`}}><BookOpen size={28} color="#fff"/></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:36,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 12px",lineHeight:1.15}}><span style={{color:T.accent,fontStyle:"italic"}}>Unstuck</span><br/>English that people<br/>actually speak</h1></FadeIn><FadeIn delay={300}><p style={{fontFamily:Fb,fontSize:16,color:T.muted,textAlign:"center",margin:"0 0 40px",lineHeight:1.6,maxWidth:320}}>The app for people who've tried everything.<br/>Real phrases. Real progress. No quitting.</p></FadeIn><FadeIn delay={450} style={{width:"100%",maxWidth:340}}><Btn onClick={onStart}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Start learning<ChevronRight size={18}/></span></Btn></FadeIn></div>}
 
-function WelcomeBackScreen({streak,level,phrases,masteredCount,lpp,onContinue,onReset,onLogout}){const P=getLPP(lpp);const msgs=P.welcomeMsgs(streak,phrases,masteredCount);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{width:56,height:56,borderRadius:14,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{P.icon}</div><button onClick={onLogout} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 14px",fontFamily:Fb,fontSize:12,color:T.muted,cursor:"pointer"}}>Sign out</button></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:32,fontWeight:700,color:T.text,margin:"0 0 10px"}}>Welcome back!</h1><p style={{fontFamily:Fb,fontSize:16,color:T.muted,margin:"0 0 28px",lineHeight:1.5}}>{rnd(msgs)}</p></FadeIn><FadeIn delay={300}><div style={{display:"flex",gap:12,marginBottom:28}}>{[{icon:<Flame size={20} color={T.accent}/>,val:streak,label:"streak",c:T.accent},{icon:<BookOpen size={20} color={T.ok}/>,val:phrases,label:"seen",c:T.ok},{icon:<Brain size={20} color={T.purple}/>,val:masteredCount,label:"mastered",c:T.purple},{icon:<Trophy size={20} color={T.teal}/>,val:level,label:"level",c:T.teal}].map((s,i)=><div key={i} style={{flex:1,background:T.card,borderRadius:14,padding:14,textAlign:"center",boxShadow:T.shadow}}><div style={{marginBottom:4}}>{s.icon}</div><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:s.c}}>{s.val}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>{s.label}</div></div>)}</div></FadeIn><FadeIn delay={450}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Today's lesson<ArrowRight size={18}/></span></Btn><button onClick={onReset} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
+function WelcomeBackScreen({streak,level,phrases,masteredCount,lpp,onContinue,onReset,onLogout,isAdmin,onAdmin}){const P=getLPP(lpp);const msgs=P.welcomeMsgs(streak,phrases,masteredCount);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{width:56,height:56,borderRadius:14,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{P.icon}</div><div style={{display:"flex",gap:8}}>
+  {isAdmin&&<button onClick={onAdmin} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 14px",fontFamily:Fb,fontSize:12,color:T.accent,cursor:"pointer",fontWeight:600}}>Admin</button>}
+  <button onClick={onLogout} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 14px",fontFamily:Fb,fontSize:12,color:T.muted,cursor:"pointer"}}>Sign out</button>
+</div></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:32,fontWeight:700,color:T.text,margin:"0 0 10px"}}>Welcome back!</h1><p style={{fontFamily:Fb,fontSize:16,color:T.muted,margin:"0 0 28px",lineHeight:1.5}}>{rnd(msgs)}</p></FadeIn><FadeIn delay={300}><div style={{display:"flex",gap:12,marginBottom:28}}>{[{icon:<Flame size={20} color={T.accent}/>,val:streak,label:"streak",c:T.accent},{icon:<BookOpen size={20} color={T.ok}/>,val:phrases,label:"seen",c:T.ok},{icon:<Brain size={20} color={T.purple}/>,val:masteredCount,label:"mastered",c:T.purple},{icon:<Trophy size={20} color={T.teal}/>,val:level,label:"level",c:T.teal}].map((s,i)=><div key={i} style={{flex:1,background:T.card,borderRadius:14,padding:14,textAlign:"center",boxShadow:T.shadow}}><div style={{marginBottom:4}}>{s.icon}</div><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:s.c}}>{s.val}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>{s.label}</div></div>)}</div></FadeIn><FadeIn delay={450}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Today's Session<ArrowRight size={18}/></span></Btn><button onClick={onReset} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
 
 function GoalScreen({onSelect}){return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><FadeIn><Badge>STEP 1 OF 3</Badge><h2 style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>What sounds good<br/>right now?</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 24px"}}>Pick whatever catches your eye.</p></FadeIn>{GO.map((g,i)=><FadeIn key={g.id} delay={150+i*80}><button onClick={()=>onSelect(g.id)} style={{width:"100%",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:16,padding:"18px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,textAlign:"left",transition:"all .2s",boxShadow:T.shadow,marginBottom:12}} onMouseEnter={e=>{e.currentTarget.style.borderColor=g.color;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform=""}}><div style={{width:48,height:48,borderRadius:12,background:`${g.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{g.icon}</div><div style={{flex:1}}><div style={{fontFamily:Fb,fontSize:16,fontWeight:600,color:T.text}}>{g.title}</div><div style={{fontFamily:Fb,fontSize:13,color:T.muted,marginTop:2}}>{g.sub}</div></div><ChevronRight size={18} color={T.muted} style={{flexShrink:0}}/></button></FadeIn>)}</div>}
 
@@ -241,8 +434,8 @@ function LevelRevealScreen({level,onContinue}){const d={A2:{w:"1,000+",d:"You un
 /* ═══════════════════════════════════════════════
    LESSON SCREEN
    ═══════════════════════════════════════════════ */
-function LessonScreen({onComplete,allStats,lpp}){
-  const[lesson]=useState(()=>buildLesson(window.CARDS,allStats));
+function LessonScreen({cards,onComplete,allStats,lpp}){
+  const[lesson]=useState(()=>buildLesson(cards,allStats));
   const SIZE=lesson.length;const P=getLPP(lpp);
   const[step,setStep]=useState(0);const[phase,setPhase]=useState("learn");const[sel,setSel]=useState(null);const[isOk,setIsOk]=useState(null);const[fillIn,setFillIn]=useState("");const[showHint,setShowHint]=useState(false);const[quizOpts,setQuizOpts]=useState([]);const[microWin,setMicroWin]=useState("");const[mistakeMsg,setMistakeMsg]=useState("");const[showHelp,setShowHelp]=useState(false);const[frustMsg,setFrustMsg]=useState(null);const[downgraded,setDowngraded]=useState(false);const scoreRef=useRef(0);const streakRef=useRef(0);const wrongStreakRef=useRef(0);const resultsRef=useRef([]);const[,tick]=useState(0);const fillRef=useRef(null);
   const card=lesson[step];const isLast=step>=SIZE-1;
@@ -285,9 +478,220 @@ function LessonScreen({onComplete,allStats,lpp}){
   </div>
 }
 
-function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Lesson complete!</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p></FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
+/* ═══════════════════════════════════════════════
+   READING SCREEN
+   ═══════════════════════════════════════════════ */
+function ReadingScreen({session,onComplete,allStats,lpp}){
+  const passage=session.passage;
+  const pData=passage.data||passage;
+  const text=pData.text||"";
+  const title=passage.title||pData.title||"Reading";
+  const wordCount=pData.word_count||text.split(/\s+/).length;
+  const readMin=Math.max(1,Math.ceil(wordCount/200));
+  const comprehension=pData.comprehension||[];
+  const targetPhrases=pData.target_phrases||[];
+  const exercises=session.exercises||[];
 
-function TomorrowScreen({lppProfile,onNextLesson,onRestart}){const teaser=rnd(TT);const P=getLPP(lppProfile);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><Badge>COMING TOMORROW</Badge><h2 style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>{teaser.title}</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 32px",lineHeight:1.5}}>{teaser.hint}</p></FadeIn><FadeIn delay={300}><div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:40,height:40,borderRadius:10,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{P.icon}</div><div><p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Your learning style</p><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:T.text,margin:0}}>{P.label}</p></div></div></div></FadeIn><FadeIn delay={500}><div style={{background:`linear-gradient(135deg,${P.color}08,${T.hi}15)`,borderRadius:16,padding:18,marginBottom:32,border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Heart size={16} color={P.color}/><span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:P.color}}>What's next</span></div><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{P.tomorrowHook}</p></div></FadeIn><FadeIn delay={700}><Btn onClick={onNextLesson}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>One more lesson<ArrowRight size={18}/></span></Btn><button onClick={onRestart} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
+  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises, done
+  const[compIdx,setCompIdx]=useState(0);
+  const[compSel,setCompSel]=useState(null);
+  const[compShow,setCompShow]=useState(false);
+  const[compScore,setCompScore]=useState(0);
+  const[exIdx,setExIdx]=useState(0);
+  const[exResults,setExResults]=useState([]);
+  const scoreRef=useRef(0);
+  const startTimeRef=useRef(null);
+
+  const compQ=comprehension[compIdx];
+
+  const pickComp=(opt,i)=>{
+    if(compSel!==null)return;
+    setCompSel(i);setCompShow(true);
+    const correct=opt===compQ.correct||(typeof compQ.correct==="number"&&i===compQ.correct);
+    if(correct)setCompScore(s=>s+1);
+    setTimeout(()=>{
+      if(compIdx<comprehension.length-1){setCompIdx(compIdx+1);setCompSel(null);setCompShow(false)}
+      else{setStage(targetPhrases.length>0?"highlight":"exercises")}
+    },1200);
+  };
+
+  const highlightText=()=>{
+    if(!targetPhrases.length)return <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0,whiteSpace:"pre-wrap"}}>{text}</p>;
+    let result=text;
+    const parts=[];
+    let remaining=text;
+    const phrases=targetPhrases.map(tp=>tp.phrase||tp).filter(Boolean);
+    // Simple highlight: split by phrases
+    for(const phrase of phrases){
+      const idx=remaining.toLowerCase().indexOf(phrase.toLowerCase());
+      if(idx>=0){
+        parts.push({text:remaining.slice(0,idx),highlight:false});
+        parts.push({text:remaining.slice(idx,idx+phrase.length),highlight:true,phrase});
+        remaining=remaining.slice(idx+phrase.length);
+      }
+    }
+    parts.push({text:remaining,highlight:false});
+    return <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0}}>
+      {parts.map((p,i)=>p.highlight?
+        <span key={i} style={{background:T.accentSoft,color:T.accent,fontWeight:600,borderRadius:4,padding:"2px 4px"}}>{p.text}</span>:
+        <span key={i}>{p.text}</span>
+      )}
+    </p>;
+  };
+
+  // Exercise handling for session exercises
+  const curEx=exercises[exIdx];
+  const handleExResult=(correct)=>{
+    const elapsed=startTimeRef.current?Date.now()-startTimeRef.current:0;
+    if(correct)scoreRef.current++;
+    const result={card_id:curEx?.card_id,exercise_id:curEx?.exercise_id,encounter_type:curEx?.exercise_type||"exercise",result:correct?"correct":"incorrect",response_time_ms:elapsed};
+    setExResults(prev=>[...prev,result]);
+    apiLogEncounter(result);
+    if(exIdx<exercises.length-1){setExIdx(exIdx+1);startTimeRef.current=Date.now()}
+    else{onComplete(scoreRef.current,exercises.length,exResults.concat([result]))}
+  };
+
+  // Reading stage
+  if(stage==="read"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.teal} bg={T.tealSoft}>📖 READING</Badge>
+        <h2 style={{fontFamily:Fd,fontSize:24,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>{title}</h2>
+        <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 20px"}}>~{readMin} min read · {wordCount} words</p>
+      </FadeIn>
+      <FadeIn delay={200}>
+        <div style={{background:T.card,borderRadius:16,padding:24,boxShadow:T.shadow,marginBottom:24}}>
+          <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0,whiteSpace:"pre-wrap"}}>{text}</p>
+        </div>
+      </FadeIn>
+      <FadeIn delay={400}>
+        <Btn onClick={()=>setStage(comprehension.length>0?"comp":"highlight")}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Done reading<ArrowRight size={18}/></span></Btn>
+      </FadeIn>
+    </div>;
+  }
+
+  // Comprehension stage
+  if(stage==="comp"&&compQ){
+    const opts=compQ.options||[];
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.purple} bg={T.purpleSoft}>📝 COMPREHENSION</Badge>
+        <Bar current={compIdx+1} total={comprehension.length}/>
+      </FadeIn>
+      <div style={{marginTop:20}}><FadeIn key={compIdx}>
+        <p style={{fontFamily:Fb,fontSize:17,fontWeight:500,color:T.text,margin:"0 0 20px",lineHeight:1.5}}>{compQ.question}</p>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {opts.map((o,i)=>{
+            const correctIdx=typeof compQ.correct==="number"?compQ.correct:opts.indexOf(compQ.correct);
+            const isCorrect=i===correctIdx;
+            const isSel=compSel===i;
+            let bg=T.card,bdr=T.border;
+            if(compShow){if(isCorrect){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}
+            return <button key={i} onClick={()=>pickComp(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:compSel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>
+              {compShow&&isCorrect&&<Check size={16} color={T.ok} strokeWidth={3}/>}{o}
+            </button>
+          })}
+        </div>
+      </FadeIn></div>
+    </div>;
+  }
+
+  // Highlight stage - show passage with target phrases highlighted
+  if(stage==="highlight"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.accent} bg={T.accentSoft}>🎯 KEY PHRASES</Badge>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"12px 0 16px"}}>Here are the target phrases from the reading:</p>
+      </FadeIn>
+      <FadeIn delay={150}>
+        <div style={{background:T.card,borderRadius:16,padding:24,boxShadow:T.shadow,marginBottom:16}}>
+          {highlightText()}
+        </div>
+      </FadeIn>
+      {targetPhrases.length>0&&<FadeIn delay={300}>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:24}}>
+          {targetPhrases.map((tp,i)=>{
+            const phrase=tp.phrase||tp;
+            const cardId=tp.card_id;
+            const meaning=tp.meaning||"";
+            return <div key={i} style={{background:T.accentSoft,borderRadius:12,padding:14,border:`1.5px solid ${T.accent}30`}}>
+              <p style={{fontFamily:Fd,fontSize:16,fontWeight:600,color:T.accent,margin:"0 0 4px",fontStyle:"italic"}}>"{phrase}"</p>
+              {meaning&&<p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0}}>{meaning}</p>}
+            </div>
+          })}
+        </div>
+      </FadeIn>}
+      <FadeIn delay={450}>
+        <Btn onClick={()=>{if(exercises.length>0){setStage("exercises");startTimeRef.current=Date.now()}else{onComplete(compScore,comprehension.length,[])}}}>
+          <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            {exercises.length>0?"Continue to exercises":"Finish"}<ArrowRight size={18}/>
+          </span>
+        </Btn>
+      </FadeIn>
+    </div>;
+  }
+
+  // Exercise stage - use existing exercise components if cards available
+  if(stage==="exercises"&&curEx){
+    // If the exercise has a full card object, use existing exercise components
+    const exCard=curEx.card||curEx.data?.card;
+    if(exCard&&exCard.phrase){
+      const exType=curEx.exercise_type||"quiz";
+      if(exType==="rearrange"&&exCard.rearrange)return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><Bar current={exIdx+1} total={exercises.length}/><div style={{marginTop:16}}><RearrangeEx card={exCard} onResult={handleExResult} onHelp={()=>{}}/></div></div>;
+      if((exType==="recall"||exType==="production")&&exCard.phrase)return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><Bar current={exIdx+1} total={exercises.length}/><div style={{marginTop:16}}><RecallEx card={exCard} onResult={handleExResult} onHelp={()=>{}}/></div></div>;
+    }
+    // Generic exercise rendering for pool exercises
+    const exData=curEx.data||{};
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <Bar current={exIdx+1} total={exercises.length}/>
+      <FadeIn key={exIdx}>
+        <div style={{marginTop:20}}>
+          <Badge color={T.teal} bg={T.tealSoft}>{curEx.exercise_type||"EXERCISE"}</Badge>
+          {exData.question&&<p style={{fontFamily:Fb,fontSize:17,fontWeight:500,color:T.text,margin:"12px 0 16px",lineHeight:1.5}}>{exData.question}</p>}
+          {exData.prompt&&<p style={{fontFamily:Fb,fontSize:17,fontWeight:500,color:T.text,margin:"12px 0 16px",lineHeight:1.5}}>{exData.prompt}</p>}
+          {exData.options&&<GenericQuiz options={exData.options} correct={exData.correct} onResult={handleExResult}/>}
+          {!exData.options&&<div>
+            <p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 12px"}}>{exData.instruction||"Complete the exercise"}</p>
+            <Btn onClick={()=>handleExResult(true)}>Continue →</Btn>
+          </div>}
+        </div>
+      </FadeIn>
+    </div>;
+  }
+
+  // Fallback
+  return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:T.bg}}>
+    <p style={{fontFamily:Fb,fontSize:14,color:T.muted}}>Loading...</p>
+  </div>;
+}
+
+// Generic quiz for pool exercises
+function GenericQuiz({options,correct,onResult}){
+  const[sel,setSel]=useState(null);
+  const[show,setShow]=useState(false);
+  const pick=(o,i)=>{
+    if(sel!==null)return;
+    setSel(i);setShow(true);
+    const isCorrect=typeof correct==="number"?i===correct:o===correct;
+    setTimeout(()=>onResult(isCorrect),1200);
+  };
+  return <div style={{display:"flex",flexDirection:"column",gap:9}}>
+    {options.map((o,i)=>{
+      const correctIdx=typeof correct==="number"?correct:options.indexOf(correct);
+      const isCorrect=i===correctIdx;
+      const isSel=sel===i;
+      let bg=T.card,bdr=T.border;
+      if(show){if(isCorrect){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}
+      return <button key={i} onClick={()=>pick(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:sel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>
+        {show&&isCorrect&&<Check size={16} color={T.ok} strokeWidth={3}/>}{typeof o==="string"?o:o.text||JSON.stringify(o)}
+      </button>
+    })}
+  </div>
+}
+
+function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Session complete!</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p></FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
+
+function TomorrowScreen({lppProfile,onNextLesson,onRestart}){const teaser=rnd(TT);const P=getLPP(lppProfile);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><Badge>COMING TOMORROW</Badge><h2 style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>{teaser.title}</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 32px",lineHeight:1.5}}>{teaser.hint}</p></FadeIn><FadeIn delay={300}><div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:40,height:40,borderRadius:10,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{P.icon}</div><div><p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Your learning style</p><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:T.text,margin:0}}>{P.label}</p></div></div></div></FadeIn><FadeIn delay={500}><div style={{background:`linear-gradient(135deg,${P.color}08,${T.hi}15)`,borderRadius:16,padding:18,marginBottom:32,border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Heart size={16} color={P.color}/><span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:P.color}}>What's next</span></div><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{P.tomorrowHook}</p></div></FadeIn><FadeIn delay={700}><Btn onClick={onNextLesson}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>One more session<ArrowRight size={18}/></span></Btn><button onClick={onRestart} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
 
 /* ═══════════════════════════════════════════════
    MAIN APP — with API auth + persistence
@@ -303,11 +707,22 @@ function App(){
   const[lessons,setLessons]=useState(0);
   const[lessonCards,setLessonCards]=useState([]);
   const[cardStats,setCardStats]=useState({});
+  const[allCards,setAllCards]=useState([]);
+  const[isAdmin,setIsAdminState]=useState(false);
+  const[sessionData,setSessionData]=useState(null);
+  const[sessionLoading,setSessionLoading]=useState(false);
+
+  const loadCards=async()=>{
+    const cards=await apiLoadCards();
+    setAllCards(cards);
+    return cards;
+  };
 
   useEffect(()=>{
     (async()=>{
       if(!getToken()){setLoading(false);return}
-      const d=await apiLoad();
+      setIsAdminState(getIsAdmin());
+      const[d]=await Promise.all([apiLoad(),loadCards()]);
       if(d&&d.lessonsCompleted>0){
         const s=calcStreak(d.lastDate,d.streak);
         setStreak(s);setLpp(d.lppProfile);setLevel(d.userLevel);setLessons(d.lessonsCompleted);setCardStats(d.cardStats||{});
@@ -318,7 +733,8 @@ function App(){
   },[]);
 
   const onAuth=async()=>{
-    const d=await apiLoad();
+    setIsAdminState(getIsAdmin());
+    const[d]=await Promise.all([apiLoad(),loadCards()]);
     if(d&&d.lessonsCompleted>0){
       const s=calcStreak(d.lastDate,d.streak);
       setStreak(s);setLpp(d.lppProfile);setLevel(d.userLevel);setLessons(d.lessonsCompleted);setCardStats(d.cardStats||{});
@@ -327,7 +743,7 @@ function App(){
     setAuthed(true);
   };
 
-  const onLogout=()=>{clearToken();setAuthed(false);setScreen("welcome");setLpp(null);setLevel("B1");setStreak(0);setLessons(0);setCardStats({})};
+  const onLogout=()=>{clearToken();setIsAdmin(false);setIsAdminState(false);setAuthed(false);setScreen("welcome");setLpp(null);setLevel("B1");setStreak(0);setLessons(0);setCardStats({});setAllCards([])};
 
   const persist=async(nl,prof,lv,newStats)=>{
     const t=getToday(),d=await apiLoad(),prev=d?d.streak:0,pd=d?d.lastDate:null;
@@ -335,12 +751,32 @@ function App(){
     await apiSave({streak:s,lastDate:t,lessonsCompleted:nl,lppProfile:prof,userLevel:lv,cardStats:newStats});setStreak(s);
   };
 
+  const startSession=async()=>{
+    setSessionLoading(true);
+    const session=await apiComposeSession();
+    setSessionLoading(false);
+    if(session&&session.type==="mixed"&&session.passage){
+      setSessionData(session);
+      setScreen("reading");
+    }else{
+      setScreen("lesson");
+    }
+  };
+
   const onGoal=id=>{setLpp(id);setScreen("placement")};
   const onPlace=lv=>{setLevel(lv);setScreen("level-reveal")};
+
   const onLesson=async(score,total,cards,results)=>{
     const ns={...cardStats};for(const r of results){ns[r.cardId]=updateSRS(ns[r.cardId]||newCardStats(),r.correct)}
     setCardStats(ns);const nl=lessons+1;setLessons(nl);setLScore({s:score,t:total});setLessonCards(cards);await persist(nl,lpp,level,ns);setScreen("celebration");
   };
+
+  const onReadingComplete=(score,total,results)=>{
+    const nl=lessons+1;setLessons(nl);setLScore({s:score,t:Math.max(total,1)});setLessonCards([]);
+    persist(nl,lpp,level,cardStats);
+    setSessionData(null);setScreen("celebration");
+  };
+
   const onReset=async()=>{await apiReset();setScreen("welcome");setLpp(null);setLevel("B1");setStreak(0);setLessons(0);setLessonCards([]);setCardStats({})};
 
   const masteredCount=Object.values(cardStats).filter(s=>s.mastery>=4).length;
@@ -350,14 +786,17 @@ function App(){
   if(!authed) return <div style={{maxWidth:440,margin:"0 auto"}}><AuthScreen onAuth={onAuth}/></div>;
 
   return <div style={{maxWidth:440,margin:"0 auto",background:T.bg,minHeight:"100vh",position:"relative",overflow:"hidden"}}>
-    {screen==="welcome"&&<WelcomeScreen onStart={()=>setScreen("goal")}/>}
-    {screen==="welcome-back"&&<WelcomeBackScreen streak={streak} level={level} phrases={seenCount} masteredCount={masteredCount} lpp={lpp} onContinue={()=>setScreen("lesson")} onReset={onReset} onLogout={onLogout}/>}
+    {screen==="welcome"&&<WelcomeScreen onStart={()=>setScreen("goal")} isAdmin={isAdmin} onAdmin={()=>setScreen("admin")}/>}
+    {screen==="welcome-back"&&<WelcomeBackScreen streak={streak} level={level} phrases={seenCount} masteredCount={masteredCount} lpp={lpp} onContinue={startSession} onReset={onReset} onLogout={onLogout} isAdmin={isAdmin} onAdmin={()=>setScreen("admin")}/>}
     {screen==="goal"&&<GoalScreen onSelect={onGoal}/>}
     {screen==="placement"&&<PlacementScreen onComplete={onPlace}/>}
     {screen==="level-reveal"&&<LevelRevealScreen level={level} onContinue={()=>setScreen("lesson")}/>}
-    {screen==="lesson"&&<LessonScreen onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
+    {screen==="lesson"&&<LessonScreen cards={allCards} onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
+    {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp}/>}
     {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} onContinue={()=>setScreen("tomorrow")}/>}
-    {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={()=>setScreen("lesson")} onRestart={onReset}/>}
+    {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={startSession} onRestart={onReset}/>}
+    {screen==="admin"&&<AdminPanel onBack={()=>setScreen(lessons>0?"welcome-back":"welcome")}/>}
+    {sessionLoading&&<div style={{position:"fixed",inset:0,background:"rgba(251,247,240,0.9)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center"}}><div style={{width:48,height:48,borderRadius:24,background:`linear-gradient(135deg,${T.accent},${T.hi})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><BookOpen size={22} color="#fff"/></div><p style={{fontFamily:Fd,fontSize:18,color:T.muted,fontStyle:"italic"}}>Preparing your session...</p></div></div>}
   </div>;
 }
 
