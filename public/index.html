@@ -149,6 +149,31 @@ async function apiDeleteListening(exerciseId){
   const r=await fetch(window.API_URL+"/api/admin/listening/"+exerciseId,{method:"DELETE",headers:{"Authorization":"Bearer "+t}});
   return r.ok;
 }
+async function apiUploadWriting(prompts){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/admin/writing/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({prompts})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Upload failed");return j;
+}
+async function apiGetWritingPrompts(){
+  const t=getToken();if(!t)return[];
+  const r=await fetch(window.API_URL+"/api/admin/writing",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?(await r.json()).prompts||[]:[];
+}
+async function apiDeleteWritingPrompt(promptId){
+  const t=getToken();
+  const r=await fetch(window.API_URL+"/api/admin/writing/"+promptId,{method:"DELETE",headers:{"Authorization":"Bearer "+t}});
+  return r.ok;
+}
+async function apiSubmitWriting(prompt_id,user_text){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/writing/submit",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({prompt_id,user_text})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Submission failed");return j;
+}
+async function apiGetWritingHistory(){
+  const t=getToken();if(!t)return[];
+  const r=await fetch(window.API_URL+"/api/writing/history",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?(await r.json()).submissions||[]:[];
+}
 async function apiComposeSession(){
   const t=getToken();if(!t)return null;
   const r=await fetch(window.API_URL+"/api/session/compose",{headers:{"Authorization":"Bearer "+t}});
@@ -296,6 +321,7 @@ function AdminPanel({onBack}){
   const[passages,setPassages]=useState([]);
   const[exercises,setExercises]=useState([]);
   const[listening,setListening]=useState([]);
+  const[writing,setWriting]=useState([]);
   const[stats,setStats]=useState(null);
   const[contentStats,setContentStats]=useState(null);
   const[loading,setLoading]=useState(true);
@@ -304,10 +330,10 @@ function AdminPanel({onBack}){
 
   const loadData=async()=>{
     setLoading(true);
-    const[c,p,e,s,cs,li]=await Promise.all([
-      apiLoadCards(),apiGetPassages(),apiGetExercises(),apiAdminStats(),apiContentStats(),apiGetListening()
+    const[c,p,e,s,cs,li,wr]=await Promise.all([
+      apiLoadCards(),apiGetPassages(),apiGetExercises(),apiAdminStats(),apiContentStats(),apiGetListening(),apiGetWritingPrompts()
     ]);
-    setCards(c);setPassages(p);setExercises(e);setStats(s);setContentStats(cs);setListening(li);
+    setCards(c);setPassages(p);setExercises(e);setStats(s);setContentStats(cs);setListening(li);setWriting(wr);
     setLoading(false);
   };
   useEffect(()=>{loadData()},[]);
@@ -326,15 +352,20 @@ function AdminPanel({onBack}){
   const uploadListening=async()=>{
     try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadListening(arr);flash(`Uploaded ${arr.length} listening exercises`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
   };
+  const uploadWriting=async()=>{
+    try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadWriting(arr);flash(`Uploaded ${arr.length} writing prompts`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
+  };
   const deleteCard=async(id)=>{if(await apiDeleteCard(id)){flash("Card deleted");loadData()}};
   const deletePassage=async(id)=>{if(await apiDeletePassage(id)){flash("Passage deleted");loadData()}};
   const deleteListeningEx=async(id)=>{if(await apiDeleteListening(id)){flash("Listening exercise deleted");loadData()}};
+  const deleteWritingPrompt=async(id)=>{if(await apiDeleteWritingPrompt(id)){flash("Writing prompt deleted");loadData()}};
 
   const tabs=[
     {id:"cards",label:"Cards"},
     {id:"passages",label:"Passages"},
     {id:"exercises",label:"Exercises"},
     {id:"listening",label:"Listening"},
+    {id:"writing",label:"Writing"},
     {id:"stats",label:"Stats"}
   ];
 
@@ -440,6 +471,25 @@ function AdminPanel({onBack}){
       </div>
     </div>}
 
+    {!loading&&tab==="writing"&&<div>
+      <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
+        <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Writing Prompts (JSON)</h3>
+        <div style={{marginBottom:10}}><FilePickBtn/></div>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"prompt_id":"w1","level":"B1","prompt_type":"email_completion","data":{"situation":"...","starter":"..."}}]' style={inputStyle}/>
+        <div style={{marginTop:12}}><Btn onClick={uploadWriting} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
+      </div>
+      <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{writing.length} Writing Prompts</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {writing.map((wp,i)=><div key={wp.prompt_id||i} style={{background:T.card,borderRadius:12,padding:14,boxShadow:T.shadow,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0}}>{wp.prompt_id||"—"}</p>
+            <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"2px 0 0"}}>Type: {wp.prompt_type||"—"} · Level: {wp.level||"—"}</p>
+          </div>
+          <button onClick={()=>deleteWritingPrompt(wp.prompt_id)} style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:"#C0392B",flexShrink:0,marginLeft:10}}>Delete</button>
+        </div>)}
+      </div>
+    </div>}
+
     {!loading&&tab==="stats"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
         {[
@@ -448,6 +498,7 @@ function AdminPanel({onBack}){
           {label:"Passages",val:contentStats?.passage_count??passages.length,color:T.purple,bg:T.purpleSoft},
           {label:"Exercises",val:contentStats?.exercise_count??exercises.length,color:T.teal,bg:T.tealSoft},
           {label:"Listening",val:listening.length,color:T.navy,bg:T.navySoft},
+          {label:"Writing",val:writing.length,color:"#7B68A8",bg:T.purpleSoft},
         ].map((s,i)=><div key={i} style={{background:T.card,borderRadius:14,padding:18,boxShadow:T.shadow,textAlign:"center"}}>
           <div style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:s.color}}>{s.val}</div>
           <div style={{fontFamily:Fb,fontSize:12,color:T.muted,marginTop:4}}>{s.label}</div>
@@ -530,7 +581,7 @@ function LessonScreen({cards,onComplete,allStats,lpp}){
 /* ═══════════════════════════════════════════════
    READING SCREEN
    ═══════════════════════════════════════════════ */
-function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise}){
+function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise,writingPrompt}){
   const passage=session.passage;
   const pData=passage.data||passage;
   const text=pData.text||"";
@@ -574,7 +625,7 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise}
     return result;
   });
 
-  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises, listening, recall, retest
+  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises, listening, writing, recall, retest
   const[compIdx,setCompIdx]=useState(0);
   const[compSel,setCompSel]=useState(null);
   const[compShow,setCompShow]=useState(false);
@@ -690,13 +741,17 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise}
     return[correct,...wrongs.slice(0,3)].sort(()=>Math.random()-.5);
   };
   const startRecall=()=>{setStage("recall");setRcIdx(0);setRcSel(null);setRcShow(false);setRcScore(0);setRcWrong([]);setRcOpts(buildRcOpts(0))};
-  const goToListeningOrRecall=()=>{
-    if(listeningExercise){setStage("listening")}
+  const goToWritingOrRecall=()=>{
+    if(writingPrompt){setStage("writing")}
     else{startRecall()}
+  };
+  const goToListeningOrNext=()=>{
+    if(listeningExercise){setStage("listening")}
+    else{goToWritingOrRecall()}
   };
   const exNext=()=>{
     if(exIdx<exCards.length-1){const ni=exIdx+1;setExIdx(ni);initExercise(ni)}
-    else{goToListeningOrRecall()}
+    else{goToListeningOrNext()}
   };
   const doQuiz=(opt,i)=>{if(sel!==null)return;setSel(i);const ok=opt===curExCard.card.phrase;setIsOk(ok);if(ok)exGood();else exBad()};
   const doFill=()=>{const a=fillIn.trim().toLowerCase().replace(/[.,!?]/g,""),parts=curExCard.card.fillAnswer.toLowerCase().replace(/[.,!?]/g,"").split("|"),ok=parts.some(p=>a.includes(p.trim()));setIsOk(ok);if(ok)exGood();else exBad();setExPhase("fill-fb")};
@@ -779,9 +834,9 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise}
         </div>
       </FadeIn>}
       <FadeIn delay={450}>
-        <Btn onClick={()=>{if(exCards.length>0){setStage("exercises");initExercise(0)}else if(listeningExercise){setStage("listening")}else{startRecall()}}}>
+        <Btn onClick={()=>{if(exCards.length>0){setStage("exercises");initExercise(0)}else if(listeningExercise){setStage("listening")}else if(writingPrompt){setStage("writing")}else{startRecall()}}}>
           <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            {exCards.length>0?"Continue to exercises":listeningExercise?"Continue to listening":"Continue"}<ArrowRight size={18}/>
+            {exCards.length>0?"Continue to exercises":listeningExercise?"Continue to listening":writingPrompt?"Continue to writing":"Continue"}<ArrowRight size={18}/>
           </span>
         </Btn>
       </FadeIn>
@@ -862,15 +917,20 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise}
     </div>;
   }
 
-  // No exercises available — go to listening or recall
+  // No exercises available — go to listening/writing or recall
   if(stage==="exercises"&&!curExCard){
-    goToListeningOrRecall();
+    goToListeningOrNext();
     return null;
   }
 
   // ─── STAGE: LISTENING ───
   if(stage==="listening"&&listeningExercise){
-    return <ListeningScreen exercise={listeningExercise} onComplete={(ok)=>{startRecall()}}/>;
+    return <ListeningScreen exercise={listeningExercise} onComplete={(ok)=>{goToWritingOrRecall()}}/>;
+  }
+
+  // ─── STAGE: WRITING ───
+  if(stage==="writing"&&writingPrompt){
+    return <WritingScreen prompt={writingPrompt} onComplete={(ok)=>{startRecall()}} inSession={true}/>;
   }
 
   // ─── STAGE: RECALL CHECK ───
@@ -1514,6 +1574,290 @@ function SpeedDrillEx({data,exId,speak,onComplete,rwToggle}){
   </div>;
 }
 
+/* ═══════════════════════════════════════════════
+   WRITING SCREEN + FEEDBACK
+   ═══════════════════════════════════════════════ */
+function ScoreCircle({score,max=10,size=72}){
+  const r=size/2-4;const c=2*Math.PI*r;const pct=score/max;const offset=c*(1-pct);
+  const color=pct>=0.7?T.ok:pct>=0.4?T.hi:T.accent;
+  return <svg width={size} height={size} style={{display:"block"}}>
+    <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.border} strokeWidth={4}/>
+    <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={4}
+      strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+      style={{transform:"rotate(-90deg)",transformOrigin:"center",transition:"stroke-dashoffset .8s ease"}}/>
+    <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
+      style={{fontFamily:Fd,fontSize:size*.32,fontWeight:700,fill:color}}>{score}</text>
+  </svg>;
+}
+
+function ScoreBar({label,value,max=10}){
+  const pct=Math.round((value/max)*100);
+  const color=pct>=70?T.ok:pct>=40?"#B8860B":T.accent;
+  return <div style={{marginBottom:8}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+      <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>{label}</span>
+      <span style={{fontFamily:Fb,fontSize:12,fontWeight:600,color}}>{value}/{max}</span>
+    </div>
+    <div style={{height:4,borderRadius:4,background:T.border}}>
+      <div style={{height:"100%",borderRadius:4,background:color,width:`${pct}%`,transition:"width .6s ease"}}/>
+    </div>
+  </div>;
+}
+
+function AnnotatedText({text,errors}){
+  if(!errors||!errors.length)return <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0}}>{text}</p>;
+  // Build segments from error positions
+  const sorted=[...errors].sort((a,b)=>(a.start||0)-(b.start||0));
+  const parts=[];let pos=0;
+  for(const err of sorted){
+    const start=err.start!=null?err.start:text.toLowerCase().indexOf(err.original?.toLowerCase()||"~~~",pos);
+    const len=err.original?err.original.length:(err.end?err.end-start:0);
+    if(start<0||len<=0)continue;
+    if(start>pos)parts.push({text:text.slice(pos,start),type:"normal"});
+    parts.push({text:text.slice(start,start+len),type:err.type||"grammar",correction:err.correction,explanation:err.explanation});
+    pos=start+len;
+  }
+  if(pos<text.length)parts.push({text:text.slice(pos),type:"normal"});
+  if(!parts.length)return <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0}}>{text}</p>;
+
+  const[active,setActive]=useState(null);
+  const colors={grammar:{underline:"#C0392B",bg:"#FFF0F0"},unnatural:{underline:"#B8860B",bg:T.hiSoft}};
+
+  return <div style={{position:"relative"}}>
+    <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0}}>
+      {parts.map((p,i)=>{
+        if(p.type==="normal")return <span key={i}>{p.text}</span>;
+        const c=colors[p.type]||colors.grammar;
+        return <span key={i} onClick={()=>setActive(active===i?null:i)} style={{
+          textDecoration:"underline wavy",textDecorationColor:c.underline,
+          background:active===i?c.bg:"transparent",cursor:"pointer",
+          borderRadius:3,padding:active===i?"1px 3px":0,transition:"all .2s"
+        }}>{p.text}</span>;
+      })}
+    </p>
+    {active!=null&&parts[active]&&parts[active].correction&&<FadeIn>
+      <div style={{background:T.card,borderRadius:12,padding:14,boxShadow:T.shadow,marginTop:10,border:`1.5px solid ${(colors[parts[active].type]||colors.grammar).underline}25`}}>
+        <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:(colors[parts[active].type]||colors.grammar).underline,margin:"0 0 4px"}}>
+          {parts[active].type==="grammar"?"Grammar":"Phrasing"}
+        </p>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 4px"}}>
+          <span style={{textDecoration:"line-through",opacity:0.5}}>{parts[active].text}</span>{" → "}
+          <strong style={{color:T.ok}}>{parts[active].correction}</strong>
+        </p>
+        {parts[active].explanation&&<p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>{parts[active].explanation}</p>}
+      </div>
+    </FadeIn>}
+  </div>;
+}
+
+function WritingFeedback({userText,feedback,onContinue,onTryAnother}){
+  const scores=feedback.scores||{};
+  const overall=Math.round(((scores.grammar||0)+(scores.naturalness||0)+(scores.vocabulary_range||0)+(scores.coherence||0))/4);
+  const errors=feedback.errors||[];
+  const positive=feedback.positive||feedback.positive_comment||"";
+  const suggestion=feedback.suggestion||"";
+
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    <FadeIn>
+      <Badge color={T.navy} bg={T.navySoft}>✍️ FEEDBACK</Badge>
+      <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 20px"}}>Your writing reviewed</h2>
+    </FadeIn>
+    <FadeIn delay={150}>
+      <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:16,display:"flex",gap:20,alignItems:"flex-start"}}>
+        <div style={{flexShrink:0,textAlign:"center"}}>
+          <ScoreCircle score={overall}/>
+          <p style={{fontFamily:Fb,fontSize:11,color:T.muted,marginTop:4}}>overall</p>
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <ScoreBar label="Grammar" value={scores.grammar||0}/>
+          <ScoreBar label="Naturalness" value={scores.naturalness||0}/>
+          <ScoreBar label="Vocabulary" value={scores.vocabulary_range||0}/>
+          <ScoreBar label="Coherence" value={scores.coherence||0}/>
+        </div>
+      </div>
+    </FadeIn>
+    <FadeIn delay={300}>
+      <div style={{background:T.navySoft,borderRadius:16,padding:20,marginBottom:16}}>
+        <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.navy,margin:"0 0 10px"}}>Your writing (tap underlined words for corrections):</p>
+        <AnnotatedText text={userText} errors={errors}/>
+      </div>
+    </FadeIn>
+    {positive&&<FadeIn delay={400}>
+      <div style={{background:T.okSoft,borderRadius:14,padding:16,marginBottom:12,border:`1px solid ${T.ok}25`}}>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.ok,margin:0,lineHeight:1.6}}>
+          <strong style={{marginRight:6}}>+</strong>{positive}
+        </p>
+      </div>
+    </FadeIn>}
+    {suggestion&&<FadeIn delay={500}>
+      <div style={{background:T.tealSoft,borderRadius:14,padding:16,marginBottom:20,border:`1px solid ${T.teal}25`}}>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.teal,margin:0,lineHeight:1.6}}>
+          <strong style={{marginRight:6}}>Tip:</strong>{suggestion}
+        </p>
+      </div>
+    </FadeIn>}
+    <FadeIn delay={600}>
+      <div style={{display:"flex",gap:10}}>
+        {onTryAnother&&<Btn v="secondary" onClick={onTryAnother} style={{flex:1}}>Try another</Btn>}
+        <Btn onClick={onContinue} style={{flex:1}}>Continue →</Btn>
+      </div>
+    </FadeIn>
+  </div>;
+}
+
+function WritingLoading(){
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>
+    <FadeIn>
+      <div style={{width:64,height:64,borderRadius:32,background:T.navySoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
+        <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={T.navy} strokeWidth={2} strokeLinecap="round">
+          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          <animateTransform attributeName="transform" type="rotate" values="0 12 12;5 12 12;0 12 12;-5 12 12;0 12 12" dur="2s" repeatCount="indefinite"/>
+        </svg>
+      </div>
+      <p style={{fontFamily:Fd,fontSize:18,color:T.navy,fontStyle:"italic",textAlign:"center"}}>Reviewing your writing...</p>
+      <p style={{fontFamily:Fb,fontSize:13,color:T.muted,textAlign:"center",marginTop:8}}>Our AI tutor is reading your response</p>
+    </FadeIn>
+  </div>;
+}
+
+function WritingScreen({prompt,onComplete,inSession}){
+  const pData=prompt.data||prompt;
+  const pType=prompt.prompt_type||prompt.type||"free_write";
+  const pId=prompt.prompt_id||prompt.id||"";
+
+  const[input,setInput]=useState("");
+  const[submitting,setSubmitting]=useState(false);
+  const[feedback,setFeedback]=useState(null);
+  const[error,setError]=useState("");
+  const ref=useRef(null);
+
+  useEffect(()=>{setTimeout(()=>ref.current?.focus(),300)},[]);
+
+  const wordCount=input.trim()?input.trim().split(/\s+/).length:0;
+  const targets={email_completion:{min:30,max:80},rewrite:{min:5,max:50},free_write:{min:50,max:200}};
+  const target=targets[pType]||targets.free_write;
+  const wcColor=wordCount<target.min?T.muted:wordCount>target.max?"#B8860B":T.ok;
+
+  const submit=async()=>{
+    if(!input.trim())return;
+    setSubmitting(true);setError("");
+    try{
+      const result=await apiSubmitWriting(pId,input.trim());
+      setFeedback(result.feedback||result);
+    }catch(e){setError(e.message)}
+    setSubmitting(false);
+  };
+
+  if(submitting)return <WritingLoading/>;
+
+  if(feedback)return <WritingFeedback
+    userText={input}
+    feedback={feedback}
+    onContinue={()=>onComplete(true)}
+    onTryAnother={inSession?null:()=>{setInput("");setFeedback(null);setError("")}}
+  />;
+
+  // ─── EMAIL COMPLETION ───
+  if(pType==="email_completion"){
+    const situation=pData.situation||"";
+    const starter=pData.starter||pData.partial||"";
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.navy} bg={T.navySoft}>✍️ WRITING</Badge>
+        <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Complete the Email</h2>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 16px"}}>Read the situation, then finish the email.</p>
+      </FadeIn>
+      {situation&&<FadeIn delay={100}>
+        <div style={{background:T.purpleSoft,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.purple}20`}}>
+          <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.purple,margin:"0 0 4px"}}>Situation</p>
+          <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{situation}</p>
+        </div>
+      </FadeIn>}
+      <FadeIn delay={200}>
+        <div style={{background:T.navySoft,borderRadius:16,padding:20,marginBottom:16}}>
+          {starter&&<div style={{background:T.card,borderRadius:12,padding:16,marginBottom:14,border:`1px solid ${T.border}`}}>
+            <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{starter}</p>
+          </div>}
+          <textarea ref={ref} value={input} onChange={e=>setInput(e.target.value)}
+            placeholder="Continue the email..."
+            style={{width:"100%",minHeight:120,padding:16,borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:15,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.7}}
+            onFocus={e=>e.target.style.borderColor=T.navy} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+            <span style={{fontFamily:Fb,fontSize:12,color:wcColor,fontWeight:500}}>{wordCount} words <span style={{color:T.muted}}>(target: {target.min}-{target.max})</span></span>
+          </div>
+        </div>
+      </FadeIn>
+      {error&&<div style={{background:"#FFF0F0",borderRadius:10,padding:"10px 14px",marginBottom:12}}><p style={{fontFamily:Fb,fontSize:13,color:"#C0392B",margin:0}}>{error}</p></div>}
+      <FadeIn delay={350}>
+        <Btn onClick={submit} disabled={wordCount<Math.max(1,target.min-10)} style={{background:T.navy}}>Submit for review</Btn>
+      </FadeIn>
+    </div>;
+  }
+
+  // ─── REWRITE ───
+  if(pType==="rewrite"){
+    const sentence=pData.sentence||pData.original||"";
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.navy} bg={T.navySoft}>✍️ WRITING</Badge>
+        <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Rewrite</h2>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 16px"}}>Rewrite this to sound more natural:</p>
+      </FadeIn>
+      <FadeIn delay={150}>
+        <div style={{background:T.hiSoft,borderRadius:14,padding:18,marginBottom:20,border:`1.5px solid ${T.hi}50`}}>
+          <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:0,lineHeight:1.6,fontStyle:"italic"}}>"{sentence}"</p>
+        </div>
+      </FadeIn>
+      <FadeIn delay={250}>
+        <div style={{background:T.navySoft,borderRadius:16,padding:20,marginBottom:16}}>
+          <input ref={ref} value={input} onChange={e=>setInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&input.trim())submit()}}
+            placeholder="Your natural version..."
+            style={{width:"100%",padding:"14px 16px",borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.card,outline:"none",boxSizing:"border-box"}}
+            onFocus={e=>e.target.style.borderColor=T.navy} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <div style={{marginTop:8}}>
+            <span style={{fontFamily:Fb,fontSize:12,color:wcColor,fontWeight:500}}>{wordCount} words</span>
+          </div>
+        </div>
+      </FadeIn>
+      {error&&<div style={{background:"#FFF0F0",borderRadius:10,padding:"10px 14px",marginBottom:12}}><p style={{fontFamily:Fb,fontSize:13,color:"#C0392B",margin:0}}>{error}</p></div>}
+      <FadeIn delay={350}>
+        <Btn onClick={submit} disabled={!input.trim()} style={{background:T.navy}}>Submit for review</Btn>
+      </FadeIn>
+    </div>;
+  }
+
+  // ─── FREE WRITE (default) ───
+  const topic=pData.topic||pData.prompt||pData.title||"Write about anything you'd like.";
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    <FadeIn>
+      <Badge color={T.navy} bg={T.navySoft}>✍️ WRITING</Badge>
+      <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Free Write</h2>
+      <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 16px"}}>Write your thoughts on this topic:</p>
+    </FadeIn>
+    <FadeIn delay={150}>
+      <div style={{background:T.purpleSoft,borderRadius:14,padding:18,marginBottom:20,border:`1px solid ${T.purple}20`}}>
+        <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.purple,margin:0,lineHeight:1.5}}>{topic}</p>
+      </div>
+    </FadeIn>
+    <FadeIn delay={250}>
+      <div style={{background:T.navySoft,borderRadius:16,padding:20,marginBottom:16}}>
+        <textarea ref={ref} value={input} onChange={e=>setInput(e.target.value)}
+          placeholder="Start writing..."
+          style={{width:"100%",minHeight:160,padding:16,borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:15,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.7}}
+          onFocus={e=>e.target.style.borderColor=T.navy} onBlur={e=>e.target.style.borderColor=T.border}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+          <span style={{fontFamily:Fb,fontSize:12,color:wcColor,fontWeight:500}}>{wordCount} words <span style={{color:T.muted}}>(target: {target.min}-{target.max})</span></span>
+        </div>
+      </div>
+    </FadeIn>
+    {error&&<div style={{background:"#FFF0F0",borderRadius:10,padding:"10px 14px",marginBottom:12}}><p style={{fontFamily:Fb,fontSize:13,color:"#C0392B",margin:0}}>{error}</p></div>}
+    <FadeIn delay={350}>
+      <Btn onClick={submit} disabled={wordCount<Math.max(1,target.min-10)} style={{background:T.navy}}>Submit for review</Btn>
+    </FadeIn>
+  </div>;
+}
+
 function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,recallMsg,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Session complete!</h2>{recallMsg?<p style={{fontFamily:Fb,fontSize:15,color:T.navy,textAlign:"center",margin:"0 0 28px",fontWeight:500}}>{recallMsg}</p>:<p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p>}</FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
 
 function TomorrowScreen({lppProfile,onNextLesson,onRestart}){const teaser=rnd(TT);const P=getLPP(lppProfile);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><Badge>COMING TOMORROW</Badge><h2 style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>{teaser.title}</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 32px",lineHeight:1.5}}>{teaser.hint}</p></FadeIn><FadeIn delay={300}><div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:40,height:40,borderRadius:10,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{P.icon}</div><div><p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Your learning style</p><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:T.text,margin:0}}>{P.label}</p></div></div></div></FadeIn><FadeIn delay={500}><div style={{background:`linear-gradient(135deg,${P.color}08,${T.hi}15)`,borderRadius:16,padding:18,marginBottom:32,border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Heart size={16} color={P.color}/><span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:P.color}}>What's next</span></div><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{P.tomorrowHook}</p></div></FadeIn><FadeIn delay={700}><Btn onClick={onNextLesson}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>One more session<ArrowRight size={18}/></span></Btn><button onClick={onRestart} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
@@ -1581,9 +1925,12 @@ function App(){
     setSessionLoading(true);
     const session=await apiComposeSession();
     setSessionLoading(false);
-    if(session&&(session.type==="mixed"||session.type==="mixed_with_listening")&&session.passage){
+    if(session&&(session.type==="mixed"||session.type==="mixed_with_listening"||session.type==="mixed_with_writing")&&session.passage){
       setSessionData(session);
       setScreen("reading");
+    }else if(session&&session.type==="writing"&&session.writing_prompt){
+      setSessionData(session);
+      setScreen("writing");
     }else{
       setScreen("lesson");
     }
@@ -1619,7 +1966,8 @@ function App(){
     {screen==="placement"&&<PlacementScreen onComplete={onPlace}/>}
     {screen==="level-reveal"&&<LevelRevealScreen level={level} onContinue={()=>setScreen("lesson")}/>}
     {screen==="lesson"&&<LessonScreen cards={allCards} onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
-    {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} cards={allCards} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp} listeningExercise={sessionData.listening_exercise||null}/>}
+    {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} cards={allCards} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp} listeningExercise={sessionData.listening_exercise||null} writingPrompt={sessionData.writing_prompt||null}/>}
+    {screen==="writing"&&sessionData?.writing_prompt&&<WritingScreen prompt={sessionData.writing_prompt} onComplete={()=>{setSessionData(null);const nl=lessons+1;setLessons(nl);setLScore({s:7,t:10});setLessonCards([]);setRecallMsg("Nice work on your writing today!");persist(nl,lpp,level,cardStats);setScreen("celebration")}} inSession={false}/>}
     {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} recallMsg={recallMsg} onContinue={()=>setScreen("tomorrow")}/>}
     {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={startSession} onRestart={onReset}/>}
     {screen==="admin"&&<AdminPanel onBack={()=>setScreen(lessons>0?"welcome-back":"welcome")}/>}
