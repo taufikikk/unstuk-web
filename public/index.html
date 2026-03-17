@@ -1064,7 +1064,11 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise,
     // 2 exercises per phrase: easier then harder, based on mastery
     const pairs=m=>m<=1?["learn","quiz"]:m===2?["quiz","fill"]:m===3?["fill","rearrange"]:["rearrange","recall"];
     const result=[];
+    const seenCardIds=new Set();
     targetPhrases.forEach(tp=>{
+      const dedupKey=String(tp.card_id||tp.phrase||"");
+      if(seenCardIds.has(dedupKey))return;
+      seenCardIds.add(dedupKey);
       const cid=tp.card_id;
       let card=cardMap[cid]||cardMap[String(cid)];
       if(!card&&tp.phrase){card=cardMap["phrase:"+tp.phrase.toLowerCase()]}
