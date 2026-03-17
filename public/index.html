@@ -551,9 +551,12 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
 
   const initExercise=(idx)=>{
     const ex=exCards[idx];if(!ex)return;
-    const p=ex.exType;
+    let p=ex.exType;
+    // Fallback: if card lacks data for chosen type, use quiz
+    if(p==="fill"&&!(ex.card.fillBlank&&ex.card.fillAnswer))p="quiz";
+    if(p==="rearrange"&&!(ex.card.rearrange&&ex.card.rearrange.words))p="quiz";
     setExPhase(p);setSel(null);setIsOk(null);setFillIn("");setShowHint(false);
-    if(p==="learn"||p==="quiz")setQuizOpts([...ex.card.wrongOptions.slice(0,3),ex.card.phrase].sort(()=>Math.random()-.5));
+    if(p==="learn"||p==="quiz")setQuizOpts([...(ex.card.wrongOptions||[]).slice(0,3),ex.card.phrase].sort(()=>Math.random()-.5));
     startTimeRef.current=Date.now();
   };
 
@@ -704,16 +707,21 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
     const card=curExCard.card;
     const isLast=exIdx>=exCards.length-1;
     const phaseLabels={learn:"👀 New",quiz:"👀 Recognize",fill:"✏️ Fill In",rearrange:"🧩 Rearrange",recall:"🧠 Recall","fill-fb":"✏️ Fill In"};
+    // Fallback: if card lacks data for the chosen exercise type, fall back to quiz
+    const canFill=card.fillBlank&&card.fillAnswer;
+    const canRearrange=card.rearrange&&card.rearrange.words;
+    const effectivePhase=(exPhase==="fill"&&!canFill)?"quiz":(exPhase==="rearrange"&&!canRearrange)?"quiz":(exPhase==="fill-fb"&&!canFill)?"quiz":exPhase;
 
-    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    return <div key={exIdx} style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
       <div style={{marginBottom:14}}>
         <Bar current={exIdx+1} total={exCards.length}/>
-        <div style={{display:"flex",alignItems:"center",marginTop:8}}>
-          <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>{phaseLabels[exPhase]||exPhase}</span>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8}}>
+          <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>{phaseLabels[effectivePhase]||effectivePhase}</span>
+          <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>Exercise {exIdx+1} of {exCards.length}</span>
         </div>
       </div>
 
-      {exPhase==="learn"&&<FadeIn key={`l-${exIdx}`}>
+      {effectivePhase==="learn"&&<FadeIn key={`l-${exIdx}`}>
         <div style={{background:T.card,borderRadius:18,padding:24,boxShadow:T.shadow,marginBottom:18}}>
           <Badge color="#B8860B" bg={T.hiSoft}>NEW PHRASE</Badge>
           <h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 12px",fontStyle:"italic"}}>"{card.phrase}"</h3>
@@ -722,14 +730,14 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
             <p style={{fontFamily:Fb,fontSize:14,color:T.accent,fontWeight:600,margin:"0 0 3px"}}>🇮🇩 {card.meaning}</p>
             <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇬🇧 {card.meaningEn}</p>
           </div>
-          <div style={{background:T.navySoft,borderRadius:12,padding:12}}>
+          {card.usage&&<div style={{background:T.navySoft,borderRadius:12,padding:12}}>
             <p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:0,lineHeight:1.5}}>💡 {card.usage}</p>
-          </div>
+          </div>}
         </div>
-        <Btn onClick={()=>{setExPhase("quiz");setQuizOpts([...card.wrongOptions.slice(0,3),card.phrase].sort(()=>Math.random()-.5))}}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Got it — test me<ArrowRight size={18}/></span></Btn>
+        <Btn onClick={()=>{setExPhase("quiz");setQuizOpts([...(card.wrongOptions||[]).slice(0,3),card.phrase].sort(()=>Math.random()-.5))}}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Got it — test me<ArrowRight size={18}/></span></Btn>
       </FadeIn>}
 
-      {exPhase==="quiz"&&<FadeIn key={`q-${exIdx}`}>
+      {effectivePhase==="quiz"&&<FadeIn key={`q-${exIdx}-${sel}`}>
         <p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 10px"}}>Which phrase means:</p>
         <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:16}}>
           <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:0,lineHeight:1.5,fontStyle:"italic"}}>"{card.meaning}"</p>
@@ -742,7 +750,7 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
         </div><div style={{marginTop:12}}><Btn onClick={exNext}>{isLast?"See results →":"Continue →"}</Btn></div></FadeIn>}
       </FadeIn>}
 
-      {exPhase==="fill"&&<FadeIn key={`f-${exIdx}`}>
+      {effectivePhase==="fill"&&<FadeIn key={`f-${exIdx}`}>
         <Badge color={T.teal} bg={T.tealSoft}>✏️ FILL IN THE BLANK</Badge>
         <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:10,marginTop:10}}>
           <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:"0 0 8px",lineHeight:1.5}}>{card.fillBlank}</p>
@@ -753,7 +761,7 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
         <div style={{display:"flex",gap:10}}>{!showHint&&<Btn v="secondary" onClick={()=>setShowHint(true)} style={{width:"auto",flex:"0 0 auto",padding:"14px 20px"}}>Hint</Btn>}<Btn onClick={doFill} disabled={!fillIn.trim()}>Check</Btn></div>
       </FadeIn>}
 
-      {exPhase==="fill-fb"&&<FadeIn key={`ff-${exIdx}`}>
+      {effectivePhase==="fill-fb"&&<FadeIn key={`ff-${exIdx}`}>
         <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:12}}>
           <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:0,lineHeight:1.5}}>{card.fillBlank}</p>
         </div>
@@ -763,8 +771,8 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
         <Btn onClick={exNext}>{isLast?"See results →":"Continue →"}</Btn>
       </FadeIn>}
 
-      {exPhase==="rearrange"&&<RearrangeEx card={card} onResult={ok=>{if(ok)exGood();else exBad();exNext()}} onHelp={()=>{}}/>}
-      {exPhase==="recall"&&<RecallEx card={card} onResult={ok=>{if(ok)exGood();else exBad();exNext()}} onHelp={()=>{}}/>}
+      {effectivePhase==="rearrange"&&<RearrangeEx key={`rr-${exIdx}`} card={card} onResult={ok=>{if(ok)exGood();else exBad();exNext()}} onHelp={()=>{}}/>}
+      {effectivePhase==="recall"&&<RecallEx key={`rc-${exIdx}`} card={card} onResult={ok=>{if(ok)exGood();else exBad();exNext()}} onHelp={()=>{}}/>}
     </div>;
   }
 
