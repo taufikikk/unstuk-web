@@ -11,6 +11,7 @@
   body{font-family:'DM Sans',-apple-system,sans-serif;background:#FBF7F0;-webkit-font-smoothing:antialiased}
   input,button,textarea{font-family:inherit}
   @keyframes cF{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(100vh) rotate(720deg);opacity:0}}
+  @keyframes typeDot{0%,80%,100%{opacity:.3}40%{opacity:1}}
 </style>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -174,6 +175,41 @@ async function apiGetWritingHistory(){
   const r=await fetch(window.API_URL+"/api/writing/history",{headers:{"Authorization":"Bearer "+t}});
   return r.ok?(await r.json()).submissions||[]:[];
 }
+async function apiUploadScenarios(scenarios){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/admin/scenarios/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({scenarios})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Upload failed");return j;
+}
+async function apiGetScenarios(){
+  const t=getToken();if(!t)return[];
+  const r=await fetch(window.API_URL+"/api/admin/scenarios",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?(await r.json()).scenarios||[]:[];
+}
+async function apiDeleteScenario(scenarioId){
+  const t=getToken();
+  const r=await fetch(window.API_URL+"/api/admin/scenarios/"+scenarioId,{method:"DELETE",headers:{"Authorization":"Bearer "+t}});
+  return r.ok;
+}
+async function apiGetConversationScenarios(){
+  const t=getToken();if(!t)return[];
+  const r=await fetch(window.API_URL+"/api/conversation/scenarios",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?(await r.json()).scenarios||[]:[];
+}
+async function apiStartConversation(scenario_id){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/conversation/start",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({scenario_id})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Failed to start");return j;
+}
+async function apiSendMessage(conversation_id,message){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/conversation/message",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({conversation_id,message})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Failed to send");return j;
+}
+async function apiEndConversation(conversation_id){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/conversation/end",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({conversation_id})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Failed to end");return j;
+}
 async function apiComposeSession(){
   const t=getToken();if(!t)return null;
   const r=await fetch(window.API_URL+"/api/session/compose",{headers:{"Authorization":"Bearer "+t}});
@@ -322,6 +358,7 @@ function AdminPanel({onBack}){
   const[exercises,setExercises]=useState([]);
   const[listening,setListening]=useState([]);
   const[writing,setWriting]=useState([]);
+  const[scenarios,setScenarios]=useState([]);
   const[stats,setStats]=useState(null);
   const[contentStats,setContentStats]=useState(null);
   const[loading,setLoading]=useState(true);
@@ -330,10 +367,10 @@ function AdminPanel({onBack}){
 
   const loadData=async()=>{
     setLoading(true);
-    const[c,p,e,s,cs,li,wr]=await Promise.all([
-      apiLoadCards(),apiGetPassages(),apiGetExercises(),apiAdminStats(),apiContentStats(),apiGetListening(),apiGetWritingPrompts()
+    const[c,p,e,s,cs,li,wr,sc]=await Promise.all([
+      apiLoadCards(),apiGetPassages(),apiGetExercises(),apiAdminStats(),apiContentStats(),apiGetListening(),apiGetWritingPrompts(),apiGetScenarios()
     ]);
-    setCards(c);setPassages(p);setExercises(e);setStats(s);setContentStats(cs);setListening(li);setWriting(wr);
+    setCards(c);setPassages(p);setExercises(e);setStats(s);setContentStats(cs);setListening(li);setWriting(wr);setScenarios(sc);
     setLoading(false);
   };
   useEffect(()=>{loadData()},[]);
@@ -359,6 +396,10 @@ function AdminPanel({onBack}){
   const deletePassage=async(id)=>{if(await apiDeletePassage(id)){flash("Passage deleted");loadData()}};
   const deleteListeningEx=async(id)=>{if(await apiDeleteListening(id)){flash("Listening exercise deleted");loadData()}};
   const deleteWritingPrompt=async(id)=>{if(await apiDeleteWritingPrompt(id)){flash("Writing prompt deleted");loadData()}};
+  const uploadScenarios=async()=>{
+    try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadScenarios(arr);flash(`Uploaded ${arr.length} scenarios`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
+  };
+  const deleteScenarioItem=async(id)=>{if(await apiDeleteScenario(id)){flash("Scenario deleted");loadData()}};
 
   const tabs=[
     {id:"cards",label:"Cards"},
@@ -366,6 +407,7 @@ function AdminPanel({onBack}){
     {id:"exercises",label:"Exercises"},
     {id:"listening",label:"Listening"},
     {id:"writing",label:"Writing"},
+    {id:"scenarios",label:"Scenarios"},
     {id:"stats",label:"Stats"}
   ];
 
@@ -490,6 +532,25 @@ function AdminPanel({onBack}){
       </div>
     </div>}
 
+    {!loading&&tab==="scenarios"&&<div>
+      <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
+        <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Scenarios (JSON)</h3>
+        <div style={{marginBottom:10}}><FilePickBtn/></div>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"scenario_id":"s1","level":"B1","title":"...","data":{"situation":"...","ai_role":"...","starter_message":"..."}}]' style={inputStyle}/>
+        <div style={{marginTop:12}}><Btn onClick={uploadScenarios} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
+      </div>
+      <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{scenarios.length} Scenarios</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {scenarios.map((sc,i)=><div key={sc.scenario_id||i} style={{background:T.card,borderRadius:12,padding:14,boxShadow:T.shadow,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0}}>{sc.title||sc.scenario_id||"—"}</p>
+            <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"2px 0 0"}}>Level: {sc.level||"—"} {sc.data?.situation?`· ${sc.data.situation.slice(0,60)}...`:""}</p>
+          </div>
+          <button onClick={()=>deleteScenarioItem(sc.scenario_id)} style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:"#C0392B",flexShrink:0,marginLeft:10}}>Delete</button>
+        </div>)}
+      </div>
+    </div>}
+
     {!loading&&tab==="stats"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
         {[
@@ -499,6 +560,7 @@ function AdminPanel({onBack}){
           {label:"Exercises",val:contentStats?.exercise_count??exercises.length,color:T.teal,bg:T.tealSoft},
           {label:"Listening",val:listening.length,color:T.navy,bg:T.navySoft},
           {label:"Writing",val:writing.length,color:"#7B68A8",bg:T.purpleSoft},
+          {label:"Scenarios",val:scenarios.length,color:T.accent,bg:T.accentSoft},
         ].map((s,i)=><div key={i} style={{background:T.card,borderRadius:14,padding:18,boxShadow:T.shadow,textAlign:"center"}}>
           <div style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:s.color}}>{s.val}</div>
           <div style={{fontFamily:Fb,fontSize:12,color:T.muted,marginTop:4}}>{s.label}</div>
@@ -520,10 +582,10 @@ function WelcomeScreen({onStart,isAdmin,onAdmin}){return <div style={{minHeight:
   {isAdmin&&<button onClick={onAdmin} style={{position:"absolute",top:20,right:20,background:T.card,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"8px 14px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,boxShadow:T.shadow}}>Admin Panel</button>}
   <FadeIn><div style={{width:64,height:64,borderRadius:16,background:`linear-gradient(135deg,${T.accent},${T.hi})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 4px 20px ${T.accent}33`}}><BookOpen size={28} color="#fff"/></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:36,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 12px",lineHeight:1.15}}><span style={{color:T.accent,fontStyle:"italic"}}>Unstuck</span><br/>English that people<br/>actually speak</h1></FadeIn><FadeIn delay={300}><p style={{fontFamily:Fb,fontSize:16,color:T.muted,textAlign:"center",margin:"0 0 40px",lineHeight:1.6,maxWidth:320}}>The app for people who've tried everything.<br/>Real phrases. Real progress. No quitting.</p></FadeIn><FadeIn delay={450} style={{width:"100%",maxWidth:340}}><Btn onClick={onStart}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Start learning<ChevronRight size={18}/></span></Btn></FadeIn></div>}
 
-function WelcomeBackScreen({streak,level,phrases,masteredCount,lpp,onContinue,onReset,onLogout,isAdmin,onAdmin}){const P=getLPP(lpp);const msgs=P.welcomeMsgs(streak,phrases,masteredCount);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{width:56,height:56,borderRadius:14,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{P.icon}</div><div style={{display:"flex",gap:8}}>
+function WelcomeBackScreen({streak,level,phrases,masteredCount,lpp,onContinue,onConversation,onReset,onLogout,isAdmin,onAdmin}){const P=getLPP(lpp);const msgs=P.welcomeMsgs(streak,phrases,masteredCount);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{width:56,height:56,borderRadius:14,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{P.icon}</div><div style={{display:"flex",gap:8}}>
   {isAdmin&&<button onClick={onAdmin} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 14px",fontFamily:Fb,fontSize:12,color:T.accent,cursor:"pointer",fontWeight:600}}>Admin</button>}
   <button onClick={onLogout} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:8,padding:"6px 14px",fontFamily:Fb,fontSize:12,color:T.muted,cursor:"pointer"}}>Sign out</button>
-</div></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:32,fontWeight:700,color:T.text,margin:"0 0 10px"}}>Welcome back!</h1><p style={{fontFamily:Fb,fontSize:16,color:T.muted,margin:"0 0 28px",lineHeight:1.5}}>{rnd(msgs)}</p></FadeIn><FadeIn delay={300}><div style={{display:"flex",gap:12,marginBottom:28}}>{[{icon:<Flame size={20} color={T.accent}/>,val:streak,label:"streak",c:T.accent},{icon:<BookOpen size={20} color={T.ok}/>,val:phrases,label:"seen",c:T.ok},{icon:<Brain size={20} color={T.purple}/>,val:masteredCount,label:"mastered",c:T.purple},{icon:<Trophy size={20} color={T.teal}/>,val:level,label:"level",c:T.teal}].map((s,i)=><div key={i} style={{flex:1,background:T.card,borderRadius:14,padding:14,textAlign:"center",boxShadow:T.shadow}}><div style={{marginBottom:4}}>{s.icon}</div><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:s.c}}>{s.val}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>{s.label}</div></div>)}</div></FadeIn><FadeIn delay={450}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Today's Session<ArrowRight size={18}/></span></Btn><button onClick={onReset} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
+</div></div></FadeIn><FadeIn delay={150}><h1 style={{fontFamily:Fd,fontSize:32,fontWeight:700,color:T.text,margin:"0 0 10px"}}>Welcome back!</h1><p style={{fontFamily:Fb,fontSize:16,color:T.muted,margin:"0 0 28px",lineHeight:1.5}}>{rnd(msgs)}</p></FadeIn><FadeIn delay={300}><div style={{display:"flex",gap:12,marginBottom:28}}>{[{icon:<Flame size={20} color={T.accent}/>,val:streak,label:"streak",c:T.accent},{icon:<BookOpen size={20} color={T.ok}/>,val:phrases,label:"seen",c:T.ok},{icon:<Brain size={20} color={T.purple}/>,val:masteredCount,label:"mastered",c:T.purple},{icon:<Trophy size={20} color={T.teal}/>,val:level,label:"level",c:T.teal}].map((s,i)=><div key={i} style={{flex:1,background:T.card,borderRadius:14,padding:14,textAlign:"center",boxShadow:T.shadow}}><div style={{marginBottom:4}}>{s.icon}</div><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:s.c}}>{s.val}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>{s.label}</div></div>)}</div></FadeIn><FadeIn delay={450}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Today's Session<ArrowRight size={18}/></span></Btn>{onConversation&&<Btn v="ghost" onClick={onConversation} style={{marginTop:10}}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Practice conversation</span></Btn>}<button onClick={onReset} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
 
 function GoalScreen({onSelect}){return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><FadeIn><Badge>STEP 1 OF 3</Badge><h2 style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>What sounds good<br/>right now?</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 24px"}}>Pick whatever catches your eye.</p></FadeIn>{GO.map((g,i)=><FadeIn key={g.id} delay={150+i*80}><button onClick={()=>onSelect(g.id)} style={{width:"100%",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:16,padding:"18px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16,textAlign:"left",transition:"all .2s",boxShadow:T.shadow,marginBottom:12}} onMouseEnter={e=>{e.currentTarget.style.borderColor=g.color;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform=""}}><div style={{width:48,height:48,borderRadius:12,background:`${g.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{g.icon}</div><div style={{flex:1}}><div style={{fontFamily:Fb,fontSize:16,fontWeight:600,color:T.text}}>{g.title}</div><div style={{fontFamily:Fb,fontSize:13,color:T.muted,marginTop:2}}>{g.sub}</div></div><ChevronRight size={18} color={T.muted} style={{flexShrink:0}}/></button></FadeIn>)}</div>}
 
@@ -1858,6 +1920,329 @@ function WritingScreen({prompt,onComplete,inSession}){
   </div>;
 }
 
+/* ═══════════════════════════════════════════════
+   CONVERSATION SCREEN
+   ═══════════════════════════════════════════════ */
+function TypingIndicator(){
+  return <div style={{display:"flex",gap:4,padding:"10px 16px"}}>
+    {[0,1,2].map(i=><div key={i} style={{
+      width:7,height:7,borderRadius:"50%",background:T.muted,
+      animation:`typeDot 1.4s ease-in-out ${i*0.2}s infinite`
+    }}/>)}
+  </div>;
+}
+
+function SendIcon({size=20}){
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+  </svg>;
+}
+
+function ChatBubble({message,isUser}){
+  const text=message.text||message.content||"";
+  // Parse corrections: [[correction|original]] → highlight spans
+  const renderText=(t)=>{
+    const re=/\[\[([^|]+)\|([^\]]+)\]\]/g;
+    const parts=[];let last=0,m;
+    while((m=re.exec(t))!==null){
+      if(m.index>last)parts.push({type:"text",val:t.slice(last,m.index)});
+      parts.push({type:"correction",correction:m[1],original:m[2]});
+      last=re.lastIndex;
+    }
+    if(last<t.length)parts.push({type:"text",val:t.slice(last)});
+    if(!parts.length)return t;
+    return parts.map((p,i)=>p.type==="text"?<span key={i}>{p.val}</span>:
+      <span key={i} style={{background:"#FFF3CD",borderRadius:4,padding:"1px 4px",fontWeight:500}} title={`Correction: ${p.correction}`}>
+        {p.original}<span style={{fontSize:11,color:"#B8860B",marginLeft:3}}>→ {p.correction}</span>
+      </span>
+    );
+  };
+
+  return <div style={{
+    display:"flex",justifyContent:isUser?"flex-end":"flex-start",marginBottom:10
+  }}>
+    <div style={{
+      maxWidth:"80%",padding:"12px 16px",borderRadius:isUser?"16px 16px 4px 16px":"16px 16px 16px 4px",
+      background:isUser?T.accent:T.card,color:isUser?"#fff":T.text,
+      boxShadow:isUser?"none":T.shadow,
+      fontFamily:Fb,fontSize:14,lineHeight:1.6
+    }}>
+      {isUser?text:renderText(text)}
+    </div>
+  </div>;
+}
+
+function ConversationScreen({level,onComplete,onBack}){
+  const[stage,setStage]=useState("pick"); // pick, chat, analysis
+  const[scenarios,setScenarios]=useState([]);
+  const[loadingScenarios,setLoadingScenarios]=useState(true);
+  const[convoId,setConvoId]=useState(null);
+  const[messages,setMessages]=useState([]);
+  const[input,setInput]=useState("");
+  const[sending,setSending]=useState(false);
+  const[msgCount,setMsgCount]=useState(0);
+  const[rateLimited,setRateLimited]=useState(false);
+  const[analysis,setAnalysis]=useState(null);
+  const[ending,setEnding]=useState(false);
+  const[error,setError]=useState("");
+  const[scenario,setScenario]=useState(null);
+  const chatEndRef=useRef(null);
+  const inputRef=useRef(null);
+  const MSG_LIMIT=30;
+
+  useEffect(()=>{
+    (async()=>{
+      const s=await apiGetConversationScenarios();
+      setScenarios(s);setLoadingScenarios(false);
+    })();
+  },[]);
+
+  useEffect(()=>{chatEndRef.current?.scrollIntoView({behavior:"smooth"})},[messages,sending]);
+
+  const startConvo=async(scenarioId)=>{
+    setError("");
+    try{
+      const s=scenarios.find(x=>x.scenario_id===scenarioId);
+      setScenario(s||null);
+      const res=await apiStartConversation(scenarioId);
+      setConvoId(res.conversation_id);
+      const firstMsg=res.message||res.starter_message||(s?.data?.starter_message);
+      if(firstMsg)setMessages([{role:"ai",text:firstMsg}]);
+      setMsgCount(0);setStage("chat");
+      setTimeout(()=>inputRef.current?.focus(),200);
+    }catch(e){setError(e.message)}
+  };
+
+  const startFreeChat=async()=>{
+    setError("");
+    try{
+      const res=await apiStartConversation(null);
+      setConvoId(res.conversation_id);setScenario(null);
+      const firstMsg=res.message||"Hi! What would you like to talk about today?";
+      setMessages([{role:"ai",text:firstMsg}]);
+      setMsgCount(0);setStage("chat");
+      setTimeout(()=>inputRef.current?.focus(),200);
+    }catch(e){setError(e.message)}
+  };
+
+  const sendMessage=async()=>{
+    if(!input.trim()||sending||rateLimited)return;
+    const txt=input.trim();setInput("");
+    setMessages(m=>[...m,{role:"user",text:txt}]);
+    const newCount=msgCount+1;setMsgCount(newCount);
+    if(newCount>=MSG_LIMIT){setRateLimited(true)}
+    setSending(true);setError("");
+    try{
+      const res=await apiSendMessage(convoId,txt);
+      if(res.rate_limited){setRateLimited(true);setMessages(m=>[...m,{role:"ai",text:"You've had a great practice today! Come back tomorrow for more."}]);setSending(false);return}
+      const aiText=res.message||res.response||"";
+      if(aiText)setMessages(m=>[...m,{role:"ai",text:aiText}]);
+    }catch(e){setError(e.message)}
+    setSending(false);
+    setTimeout(()=>inputRef.current?.focus(),100);
+  };
+
+  const endConvo=async()=>{
+    setEnding(true);setError("");
+    try{
+      const res=await apiEndConversation(convoId);
+      setAnalysis(res.analysis||res);setStage("analysis");
+    }catch(e){setError(e.message)}
+    setEnding(false);
+  };
+
+  // ─── SCENARIO PICKER ───
+  if(stage==="pick"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+          <button onClick={onBack} style={{background:T.card,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"8px 14px",cursor:"pointer",fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text}}>← Back</button>
+          <h2 style={{fontFamily:Fd,fontSize:24,fontWeight:700,color:T.text,margin:0}}>Conversation</h2>
+        </div>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 20px",lineHeight:1.5}}>Practice speaking English in realistic scenarios. Pick a situation or start a free chat.</p>
+      </FadeIn>
+      <FadeIn delay={150}>
+        <button onClick={startFreeChat} style={{width:"100%",background:`linear-gradient(135deg,${T.purple}15,${T.teal}15)`,border:`1.5px solid ${T.purple}30`,borderRadius:16,padding:"18px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:14,textAlign:"left",marginBottom:20,transition:"all .2s"}}
+          onMouseEnter={e=>e.currentTarget.style.transform="translateY(-2px)"} onMouseLeave={e=>e.currentTarget.style.transform=""}>
+          <div style={{width:44,height:44,borderRadius:12,background:T.purpleSoft,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>💬</div>
+          <div><div style={{fontFamily:Fb,fontSize:15,fontWeight:600,color:T.text}}>Free Chat</div><div style={{fontFamily:Fb,fontSize:13,color:T.muted,marginTop:2}}>Talk about anything — no pressure</div></div>
+          <ChevronRight size={18} color={T.muted} style={{flexShrink:0,marginLeft:"auto"}}/>
+        </button>
+      </FadeIn>
+      {loadingScenarios&&<p style={{fontFamily:Fb,fontSize:14,color:T.muted}}>Loading scenarios...</p>}
+      {!loadingScenarios&&scenarios.length>0&&<FadeIn delay={250}>
+        <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.muted,margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Scenarios</p>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {scenarios.map((s,i)=>{
+            const d=s.data||s;
+            return <FadeIn key={s.scenario_id||i} delay={300+i*60}>
+              <button onClick={()=>startConvo(s.scenario_id)} style={{width:"100%",background:T.card,border:`1.5px solid ${T.border}`,borderRadius:16,padding:"16px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:14,textAlign:"left",boxShadow:T.shadow,transition:"all .2s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.transform="translateY(-2px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform=""}}>
+                <div style={{width:40,height:40,borderRadius:10,background:T.accentSoft,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🎭</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>{s.title||d.title||s.scenario_id}</div>
+                  <div style={{fontFamily:Fb,fontSize:12,color:T.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.situation||""}</div>
+                </div>
+                <ChevronRight size={16} color={T.muted} style={{flexShrink:0}}/>
+              </button>
+            </FadeIn>;
+          })}
+        </div>
+      </FadeIn>}
+      {!loadingScenarios&&scenarios.length===0&&<FadeIn delay={250}>
+        <div style={{background:T.navySoft,borderRadius:14,padding:20,textAlign:"center"}}>
+          <p style={{fontFamily:Fb,fontSize:14,color:T.navy,margin:0}}>No scenarios available yet. Try Free Chat!</p>
+        </div>
+      </FadeIn>}
+      {error&&<div style={{background:"#FFF0F0",borderRadius:10,padding:"10px 14px",marginTop:12}}><p style={{fontFamily:Fb,fontSize:13,color:"#C0392B",margin:0}}>{error}</p></div>}
+    </div>;
+  }
+
+  // ─── CHAT INTERFACE ───
+  if(stage==="chat"){
+    return <div style={{height:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      {/* Header */}
+      <div style={{padding:"14px 20px",background:T.card,borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:36,height:36,borderRadius:10,background:T.accentSoft,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>💬</div>
+          <div>
+            <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0}}>{scenario?.title||scenario?.data?.title||"Free Chat"}</p>
+            <p style={{fontFamily:Fb,fontSize:11,color:T.muted,margin:0}}>{msgCount}/{MSG_LIMIT} messages today</p>
+          </div>
+        </div>
+        <button onClick={endConvo} disabled={ending||messages.length<2} style={{
+          background:ending?"transparent":T.card,border:`1.5px solid ${T.border}`,borderRadius:10,
+          padding:"6px 14px",cursor:ending||messages.length<2?"default":"pointer",
+          fontFamily:Fb,fontSize:12,fontWeight:600,color:T.accent,opacity:ending||messages.length<2?0.4:1
+        }}>{ending?"Analyzing...":"End chat"}</button>
+      </div>
+
+      {/* Messages */}
+      <div style={{flex:1,overflowY:"auto",padding:"16px 20px",display:"flex",flexDirection:"column"}}>
+        {scenario?.data?.situation&&<div style={{background:T.purpleSoft,borderRadius:12,padding:12,marginBottom:14,border:`1px solid ${T.purple}20`}}>
+          <p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.purple,margin:"0 0 3px"}}>Scenario</p>
+          <p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0,lineHeight:1.5}}>{scenario.data.situation}</p>
+        </div>}
+        {messages.map((m,i)=><ChatBubble key={i} message={m} isUser={m.role==="user"}/>)}
+        {sending&&<div style={{display:"flex",justifyContent:"flex-start",marginBottom:10}}>
+          <div style={{background:T.card,borderRadius:"16px 16px 16px 4px",boxShadow:T.shadow}}>
+            <TypingIndicator/>
+          </div>
+        </div>}
+        {rateLimited&&!sending&&<FadeIn>
+          <div style={{background:T.hiSoft,borderRadius:14,padding:16,marginTop:8,border:`1px solid ${T.hi}50`,textAlign:"center"}}>
+            <p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:"#B8860B",margin:"0 0 4px"}}>You've had a great practice today!</p>
+            <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>Come back tomorrow for more conversations.</p>
+          </div>
+        </FadeIn>}
+        <div ref={chatEndRef}/>
+      </div>
+
+      {/* Input */}
+      {!rateLimited&&<div style={{padding:"12px 20px 16px",background:T.card,borderTop:`1px solid ${T.border}`,flexShrink:0}}>
+        {error&&<p style={{fontFamily:Fb,fontSize:12,color:"#C0392B",margin:"0 0 8px"}}>{error}</p>}
+        <div style={{display:"flex",gap:8}}>
+          <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey)sendMessage()}}
+            placeholder="Type your message..."
+            disabled={sending}
+            style={{flex:1,padding:"12px 16px",borderRadius:24,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:15,color:T.text,background:T.bg,outline:"none",boxSizing:"border-box"}}
+            onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <button onClick={sendMessage} disabled={!input.trim()||sending} style={{
+            width:44,height:44,borderRadius:22,background:!input.trim()||sending?T.border:T.accent,
+            border:"none",cursor:!input.trim()||sending?"default":"pointer",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            transition:"all .2s",flexShrink:0
+          }}>
+            <SendIcon size={18}/>
+          </button>
+        </div>
+      </div>}
+      {rateLimited&&<div style={{padding:"12px 20px 16px",background:T.card,borderTop:`1px solid ${T.border}`,flexShrink:0}}>
+        <Btn onClick={endConvo} disabled={ending} style={{background:T.accent}}>{ending?"Analyzing...":"See your analysis"}</Btn>
+      </div>}
+    </div>;
+  }
+
+  // ─── ANALYSIS ───
+  if(stage==="analysis"&&analysis){
+    const a=analysis;
+    const fluency=a.fluency_score||a.fluency||7;
+    const uniqueWords=a.unique_words||a.vocabulary_count||0;
+    const grammarErrors=a.grammar_errors||a.error_count||0;
+    const phrasesUsed=a.phrases_used||[];
+    const newPhrase=a.new_phrase||a.suggested_phrase||"";
+    const bestMoment=a.best_moment||a.highlight||"";
+
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.accent} bg={T.accentSoft}>💬 CONVERSATION ANALYSIS</Badge>
+        <h2 style={{fontFamily:Fd,fontSize:24,fontWeight:700,color:T.text,margin:"12px 0 20px"}}>Great conversation!</h2>
+      </FadeIn>
+
+      {/* Fluency score */}
+      <FadeIn delay={150}>
+        <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:16,display:"flex",alignItems:"center",gap:20}}>
+          <ScoreCircle score={fluency}/>
+          <div>
+            <p style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 4px"}}>Fluency</p>
+            <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>{fluency>=8?"Very natural flow!":fluency>=6?"Good conversational English!":"Keep practicing — you're improving!"}</p>
+          </div>
+        </div>
+      </FadeIn>
+
+      {/* Stats grid */}
+      <FadeIn delay={300}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+          <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,textAlign:"center"}}>
+            <div style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.teal}}>{uniqueWords}</div>
+            <div style={{fontFamily:Fb,fontSize:11,color:T.muted,marginTop:2}}>unique words</div>
+          </div>
+          <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,textAlign:"center"}}>
+            <div style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:grammarErrors>5?T.accent:grammarErrors>2?"#B8860B":T.ok}}>{grammarErrors}</div>
+            <div style={{fontFamily:Fb,fontSize:11,color:T.muted,marginTop:2}}>errors corrected</div>
+          </div>
+        </div>
+      </FadeIn>
+
+      {/* Phrases used */}
+      {phrasesUsed.length>0&&<FadeIn delay={400}>
+        <div style={{background:T.okSoft,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.ok}25`}}>
+          <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.ok,margin:"0 0 8px"}}>Phrases from Unstuck used: {phrasesUsed.length}</p>
+          {phrasesUsed.map((p,i)=><p key={i} style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 4px"}}>
+            <Check size={14} color={T.ok} style={{verticalAlign:-2,marginRight:6}}/><em>"{typeof p==="string"?p:p.phrase||p}"</em>
+          </p>)}
+        </div>
+      </FadeIn>}
+
+      {/* New phrase */}
+      {newPhrase&&<FadeIn delay={500}>
+        <div style={{background:T.purpleSoft,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.purple}25`}}>
+          <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.purple,margin:"0 0 4px"}}>New phrase learned</p>
+          <p style={{fontFamily:Fd,fontSize:16,fontWeight:600,color:T.text,margin:0,fontStyle:"italic"}}>"{typeof newPhrase==="string"?newPhrase:newPhrase.phrase||newPhrase}"</p>
+        </div>
+      </FadeIn>}
+
+      {/* Best moment */}
+      {bestMoment&&<FadeIn delay={600}>
+        <div style={{background:T.hiSoft,borderRadius:14,padding:16,marginBottom:20,border:`1px solid ${T.hi}50`}}>
+          <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:"#B8860B",margin:"0 0 6px"}}>Your best moment</p>
+          <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,fontStyle:"italic",lineHeight:1.6}}>"{bestMoment}"</p>
+        </div>
+      </FadeIn>}
+
+      <FadeIn delay={700}>
+        <div style={{display:"flex",gap:10}}>
+          <Btn v="secondary" onClick={()=>{setStage("pick");setMessages([]);setConvoId(null);setMsgCount(0);setRateLimited(false);setAnalysis(null);setError("")}} style={{flex:1}}>Start another</Btn>
+          <Btn onClick={()=>onComplete(analysis)} style={{flex:1}}>Back to home</Btn>
+        </div>
+      </FadeIn>
+    </div>;
+  }
+
+  return null;
+}
+
 function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,recallMsg,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Session complete!</h2>{recallMsg?<p style={{fontFamily:Fb,fontSize:15,color:T.navy,textAlign:"center",margin:"0 0 28px",fontWeight:500}}>{recallMsg}</p>:<p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p>}</FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
 
 function TomorrowScreen({lppProfile,onNextLesson,onRestart}){const teaser=rnd(TT);const P=getLPP(lppProfile);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><Badge>COMING TOMORROW</Badge><h2 style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>{teaser.title}</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 32px",lineHeight:1.5}}>{teaser.hint}</p></FadeIn><FadeIn delay={300}><div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:40,height:40,borderRadius:10,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{P.icon}</div><div><p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Your learning style</p><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:T.text,margin:0}}>{P.label}</p></div></div></div></FadeIn><FadeIn delay={500}><div style={{background:`linear-gradient(135deg,${P.color}08,${T.hi}15)`,borderRadius:16,padding:18,marginBottom:32,border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Heart size={16} color={P.color}/><span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:P.color}}>What's next</span></div><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{P.tomorrowHook}</p></div></FadeIn><FadeIn delay={700}><Btn onClick={onNextLesson}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>One more session<ArrowRight size={18}/></span></Btn><button onClick={onRestart} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
@@ -1961,13 +2346,14 @@ function App(){
 
   return <div style={{maxWidth:440,margin:"0 auto",background:T.bg,minHeight:"100vh",position:"relative",overflow:"hidden"}}>
     {screen==="welcome"&&<WelcomeScreen onStart={()=>setScreen("goal")} isAdmin={isAdmin} onAdmin={()=>setScreen("admin")}/>}
-    {screen==="welcome-back"&&<WelcomeBackScreen streak={streak} level={level} phrases={seenCount} masteredCount={masteredCount} lpp={lpp} onContinue={startSession} onReset={onReset} onLogout={onLogout} isAdmin={isAdmin} onAdmin={()=>setScreen("admin")}/>}
+    {screen==="welcome-back"&&<WelcomeBackScreen streak={streak} level={level} phrases={seenCount} masteredCount={masteredCount} lpp={lpp} onContinue={startSession} onConversation={()=>setScreen("conversation")} onReset={onReset} onLogout={onLogout} isAdmin={isAdmin} onAdmin={()=>setScreen("admin")}/>}
     {screen==="goal"&&<GoalScreen onSelect={onGoal}/>}
     {screen==="placement"&&<PlacementScreen onComplete={onPlace}/>}
     {screen==="level-reveal"&&<LevelRevealScreen level={level} onContinue={()=>setScreen("lesson")}/>}
     {screen==="lesson"&&<LessonScreen cards={allCards} onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
     {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} cards={allCards} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp} listeningExercise={sessionData.listening_exercise||null} writingPrompt={sessionData.writing_prompt||null}/>}
     {screen==="writing"&&sessionData?.writing_prompt&&<WritingScreen prompt={sessionData.writing_prompt} onComplete={()=>{setSessionData(null);const nl=lessons+1;setLessons(nl);setLScore({s:7,t:10});setLessonCards([]);setRecallMsg("Nice work on your writing today!");persist(nl,lpp,level,cardStats);setScreen("celebration")}} inSession={false}/>}
+    {screen==="conversation"&&<ConversationScreen level={level} onComplete={(analysis)=>{persist(lessons+1,lpp,level,cardStats);setLessons(l=>l+1);setScreen("welcome-back")}} onBack={()=>setScreen("welcome-back")}/>}
     {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} recallMsg={recallMsg} onContinue={()=>setScreen("tomorrow")}/>}
     {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={startSession} onRestart={onReset}/>}
     {screen==="admin"&&<AdminPanel onBack={()=>setScreen(lessons>0?"welcome-back":"welcome")}/>}
