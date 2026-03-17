@@ -489,7 +489,7 @@ function LessonScreen({cards,onComplete,allStats,lpp}){
 /* ═══════════════════════════════════════════════
    READING SCREEN
    ═══════════════════════════════════════════════ */
-function ReadingScreen({session,onComplete,allStats,lpp}){
+function ReadingScreen({session,cards,onComplete,allStats,lpp}){
   const passage=session.passage;
   const pData=passage.data||passage;
   const text=pData.text||"";
@@ -498,17 +498,50 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
   const readMin=Math.max(1,Math.ceil(wordCount/200));
   const comprehension=pData.comprehension||[];
   const targetPhrases=pData.target_phrases||[];
-  const exercises=session.exercises||[];
 
-  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises, done
+  // Build exercise list from target phrases matched to actual card data
+  const[exCards]=useState(()=>{
+    const cardMap={};(cards||[]).forEach(c=>{cardMap[c.id]=c;cardMap[c.card_id]=c});
+    return targetPhrases.map(tp=>{
+      const cid=tp.card_id;
+      const card=cardMap[cid];
+      if(!card)return null;
+      const st=allStats[card.id]||allStats[card.card_id];
+      const m=st?st.mastery:0;
+      const exType=exerciseForMastery(m);
+      return{card,exType,card_id:cid};
+    }).filter(Boolean);
+  });
+
+  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises
   const[compIdx,setCompIdx]=useState(0);
   const[compSel,setCompSel]=useState(null);
   const[compShow,setCompShow]=useState(false);
   const[compScore,setCompScore]=useState(0);
   const[exIdx,setExIdx]=useState(0);
-  const[exResults,setExResults]=useState([]);
   const scoreRef=useRef(0);
   const startTimeRef=useRef(null);
+  const resultsRef=useRef([]);
+
+  // Exercise state (mirrors LessonScreen patterns)
+  const[exPhase,setExPhase]=useState("learn");
+  const[sel,setSel]=useState(null);
+  const[isOk,setIsOk]=useState(null);
+  const[fillIn,setFillIn]=useState("");
+  const[showHint,setShowHint]=useState(false);
+  const[quizOpts,setQuizOpts]=useState([]);
+  const fillRef=useRef(null);
+
+  const P=getLPP(lpp);
+  const curExCard=exCards[exIdx];
+
+  const initExercise=(idx)=>{
+    const ex=exCards[idx];if(!ex)return;
+    const p=ex.exType;
+    setExPhase(p);setSel(null);setIsOk(null);setFillIn("");setShowHint(false);
+    if(p==="learn"||p==="quiz")setQuizOpts([...ex.card.wrongOptions.slice(0,3),ex.card.phrase].sort(()=>Math.random()-.5));
+    startTimeRef.current=Date.now();
+  };
 
   const compQ=comprehension[compIdx];
 
@@ -520,17 +553,15 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
     apiLogEncounter({card_id:0,passage_id:passage.passage_id||passage.id,encounter_type:"comprehension",result:correct?"correct":"incorrect"});
     setTimeout(()=>{
       if(compIdx<comprehension.length-1){setCompIdx(compIdx+1);setCompSel(null);setCompShow(false)}
-      else{setStage(targetPhrases.length>0?"highlight":"exercises")}
+      else{setStage("highlight")}
     },1200);
   };
 
   const highlightText=()=>{
     if(!targetPhrases.length)return <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0,whiteSpace:"pre-wrap"}}>{text}</p>;
-    let result=text;
     const parts=[];
     let remaining=text;
     const phrases=targetPhrases.map(tp=>tp.phrase||tp).filter(Boolean);
-    // Simple highlight: split by phrases
     for(const phrase of phrases){
       const idx=remaining.toLowerCase().indexOf(phrase.toLowerCase());
       if(idx>=0){
@@ -548,19 +579,28 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
     </p>;
   };
 
-  // Exercise handling for session exercises
-  const curEx=exercises[exIdx];
-  const handleExResult=(correct)=>{
+  // Exercise result handlers
+  const exGood=()=>{
+    scoreRef.current++;
     const elapsed=startTimeRef.current?Date.now()-startTimeRef.current:0;
-    if(correct)scoreRef.current++;
-    const result={card_id:curEx?.card_id,exercise_id:curEx?.exercise_id,encounter_type:curEx?.exercise_type||"exercise",result:correct?"correct":"incorrect",response_time_ms:elapsed};
-    setExResults(prev=>[...prev,result]);
-    apiLogEncounter(result);
-    if(exIdx<exercises.length-1){setExIdx(exIdx+1);startTimeRef.current=Date.now()}
-    else{onComplete(scoreRef.current,exercises.length,exResults.concat([result]))}
+    const r={card_id:curExCard.card_id,exercise_id:curExCard.card.id+"_"+curExCard.exType,encounter_type:curExCard.exType,result:"correct",response_time_ms:elapsed};
+    resultsRef.current.push(r);apiLogEncounter(r);
   };
+  const exBad=()=>{
+    const elapsed=startTimeRef.current?Date.now()-startTimeRef.current:0;
+    const r={card_id:curExCard.card_id,exercise_id:curExCard.card.id+"_"+curExCard.exType,encounter_type:curExCard.exType,result:"incorrect",response_time_ms:elapsed};
+    resultsRef.current.push(r);apiLogEncounter(r);
+  };
+  const exNext=()=>{
+    if(exIdx<exCards.length-1){const ni=exIdx+1;setExIdx(ni);initExercise(ni)}
+    else{onComplete(scoreRef.current,Math.max(exCards.length,1),resultsRef.current)}
+  };
+  const doQuiz=(opt,i)=>{if(sel!==null)return;setSel(i);const ok=opt===curExCard.card.phrase;setIsOk(ok);if(ok)exGood();else exBad()};
+  const doFill=()=>{const a=fillIn.trim().toLowerCase().replace(/[.,!?]/g,""),parts=curExCard.card.fillAnswer.toLowerCase().replace(/[.,!?]/g,"").split("|"),ok=parts.some(p=>a.includes(p.trim()));setIsOk(ok);if(ok)exGood();else exBad();setExPhase("fill-fb")};
 
-  // Reading stage
+  useEffect(()=>{if(exPhase==="fill"&&fillRef.current)fillRef.current.focus()},[exPhase]);
+
+  // ─── STAGE: READ ───
   if(stage==="read"){
     return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
       <FadeIn>
@@ -579,7 +619,7 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
     </div>;
   }
 
-  // Comprehension stage
+  // ─── STAGE: COMPREHENSION ───
   if(stage==="comp"&&compQ){
     const opts=compQ.options||[];
     return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
@@ -605,12 +645,14 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
     </div>;
   }
 
-  // Highlight stage - show passage with target phrases highlighted
+  // ─── STAGE: HIGHLIGHT (same passage, phrases highlighted + meanings) ───
   if(stage==="highlight"){
+    // Build a lookup from phrase text to card data for meanings
+    const cardMap={};(cards||[]).forEach(c=>{cardMap[c.id]=c;cardMap[c.card_id]=c});
     return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
       <FadeIn>
         <Badge color={T.accent} bg={T.accentSoft}>🎯 KEY PHRASES</Badge>
-        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"12px 0 16px"}}>Here are the target phrases from the reading:</p>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"12px 0 16px"}}>Notice these phrases from the passage:</p>
       </FadeIn>
       <FadeIn delay={150}>
         <div style={{background:T.card,borderRadius:16,padding:24,boxShadow:T.shadow,marginBottom:16}}>
@@ -621,57 +663,104 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
         <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:24}}>
           {targetPhrases.map((tp,i)=>{
             const phrase=tp.phrase||tp;
-            const cardId=tp.card_id;
-            const meaning=tp.meaning||"";
+            const card=cardMap[tp.card_id];
+            const meaning=card?card.meaning:tp.meaning||"";
+            const meaningEn=card?card.meaningEn:tp.meaningEn||"";
             return <div key={i} style={{background:T.accentSoft,borderRadius:12,padding:14,border:`1.5px solid ${T.accent}30`}}>
-              <p style={{fontFamily:Fd,fontSize:16,fontWeight:600,color:T.accent,margin:"0 0 4px",fontStyle:"italic"}}>"{phrase}"</p>
-              {meaning&&<p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0}}>{meaning}</p>}
+              <p style={{fontFamily:Fd,fontSize:16,fontWeight:600,color:T.accent,margin:"0 0 6px",fontStyle:"italic"}}>"{phrase}"</p>
+              {meaning&&<p style={{fontFamily:Fb,fontSize:14,color:T.accent,fontWeight:600,margin:"0 0 3px"}}>🇮🇩 {meaning}</p>}
+              {meaningEn&&<p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇬🇧 {meaningEn}</p>}
+              {!meaning&&!meaningEn&&tp.meaning&&<p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0}}>{tp.meaning}</p>}
             </div>
           })}
         </div>
       </FadeIn>}
       <FadeIn delay={450}>
-        <Btn onClick={()=>{if(exercises.length>0){setStage("exercises");startTimeRef.current=Date.now()}else{onComplete(compScore,comprehension.length,[])}}}>
+        <Btn onClick={()=>{if(exCards.length>0){setStage("exercises");initExercise(0)}else{onComplete(compScore,Math.max(comprehension.length,1),resultsRef.current)}}}>
           <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            {exercises.length>0?"Continue to exercises":"Finish"}<ArrowRight size={18}/>
+            {exCards.length>0?"Continue to exercises":"Finish"}<ArrowRight size={18}/>
           </span>
         </Btn>
       </FadeIn>
     </div>;
   }
 
-  // Exercise stage - use existing exercise components if cards available
-  if(stage==="exercises"&&curEx){
-    // If the exercise has a full card object, use existing exercise components
-    const exCard=curEx.card||curEx.data?.card;
-    if(exCard&&exCard.phrase){
-      const exType=curEx.exercise_type||"quiz";
-      if(exType==="rearrange"&&exCard.rearrange)return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><Bar current={exIdx+1} total={exercises.length}/><div style={{marginTop:16}}><RearrangeEx card={exCard} onResult={handleExResult} onHelp={()=>{}}/></div></div>;
-      if((exType==="recall"||exType==="production")&&exCard.phrase)return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}><Bar current={exIdx+1} total={exercises.length}/><div style={{marginTop:16}}><RecallEx card={exCard} onResult={handleExResult} onHelp={()=>{}}/></div></div>;
-    }
-    // Generic exercise rendering for pool exercises
-    const exData=curEx.data||{};
+  // ─── STAGE: EXERCISES (using existing exercise types from LessonScreen) ───
+  if(stage==="exercises"&&curExCard){
+    const card=curExCard.card;
+    const isLast=exIdx>=exCards.length-1;
+    const phaseLabels={learn:"👀 New",quiz:"👀 Recognize",fill:"✏️ Fill In",rearrange:"🧩 Rearrange",recall:"🧠 Recall","fill-fb":"✏️ Fill In"};
+
     return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
-      <Bar current={exIdx+1} total={exercises.length}/>
-      <FadeIn key={exIdx}>
-        <div style={{marginTop:20}}>
-          <Badge color={T.teal} bg={T.tealSoft}>{curEx.exercise_type||"EXERCISE"}</Badge>
-          {exData.question&&<p style={{fontFamily:Fb,fontSize:17,fontWeight:500,color:T.text,margin:"12px 0 16px",lineHeight:1.5}}>{exData.question}</p>}
-          {exData.prompt&&<p style={{fontFamily:Fb,fontSize:17,fontWeight:500,color:T.text,margin:"12px 0 16px",lineHeight:1.5}}>{exData.prompt}</p>}
-          {exData.options&&<GenericQuiz options={exData.options} correct={exData.correct} onResult={handleExResult}/>}
-          {!exData.options&&<div>
-            <p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 12px"}}>{exData.instruction||"Complete the exercise"}</p>
-            <Btn onClick={()=>handleExResult(true)}>Continue →</Btn>
-          </div>}
+      <div style={{marginBottom:14}}>
+        <Bar current={exIdx+1} total={exCards.length}/>
+        <div style={{display:"flex",alignItems:"center",marginTop:8}}>
+          <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>{phaseLabels[exPhase]||exPhase}</span>
         </div>
-      </FadeIn>
+      </div>
+
+      {exPhase==="learn"&&<FadeIn key={`l-${exIdx}`}>
+        <div style={{background:T.card,borderRadius:18,padding:24,boxShadow:T.shadow,marginBottom:18}}>
+          <Badge color="#B8860B" bg={T.hiSoft}>NEW PHRASE</Badge>
+          <h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 12px",fontStyle:"italic"}}>"{card.phrase}"</h3>
+          <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.6,margin:"0 0 12px"}}><span style={{color:T.muted}}>Example: </span>{card.context}</p>
+          <div style={{background:T.bg,borderRadius:12,padding:14,marginBottom:10}}>
+            <p style={{fontFamily:Fb,fontSize:14,color:T.accent,fontWeight:600,margin:"0 0 3px"}}>🇮🇩 {card.meaning}</p>
+            <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇬🇧 {card.meaningEn}</p>
+          </div>
+          <div style={{background:T.navySoft,borderRadius:12,padding:12}}>
+            <p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:0,lineHeight:1.5}}>💡 {card.usage}</p>
+          </div>
+        </div>
+        <Btn onClick={()=>{setExPhase("quiz");setQuizOpts([...card.wrongOptions.slice(0,3),card.phrase].sort(()=>Math.random()-.5))}}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Got it — test me<ArrowRight size={18}/></span></Btn>
+      </FadeIn>}
+
+      {exPhase==="quiz"&&<FadeIn key={`q-${exIdx}`}>
+        <p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 10px"}}>Which phrase means:</p>
+        <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:16}}>
+          <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:0,lineHeight:1.5,fontStyle:"italic"}}>"{card.meaning}"</p>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          {quizOpts.map((o,i)=>{const isSel=sel===i,cor=o===card.phrase;let bg=T.card,bdr=T.border;if(sel!==null){if(cor){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}return <button key={i} onClick={()=>doQuiz(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:sel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>{sel!==null&&cor&&<Check size={16} color={T.ok} strokeWidth={3}/>}{o}</button>})}
+        </div>
+        {sel!==null&&<FadeIn delay={80}><div style={{marginTop:16,padding:14,borderRadius:12,background:isOk?T.okSoft:T.hiSoft}}>
+          {isOk?<p style={{fontFamily:Fb,fontSize:14,color:T.ok,fontWeight:500,margin:0}}>✨ Correct!</p>:<div><p style={{fontFamily:Fb,fontSize:14,color:"#B8860B",fontWeight:500,margin:"0 0 5px"}}>Not quite</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 3px"}}><strong>{card.phrase}</strong> → {card.meaningEn}</p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0,fontStyle:"italic"}}>"{card.context}"</p></div>}
+        </div><div style={{marginTop:12}}><Btn onClick={exNext}>{isLast?"See results →":"Continue →"}</Btn></div></FadeIn>}
+      </FadeIn>}
+
+      {exPhase==="fill"&&<FadeIn key={`f-${exIdx}`}>
+        <Badge color={T.teal} bg={T.tealSoft}>✏️ FILL IN THE BLANK</Badge>
+        <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:10,marginTop:10}}>
+          <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:"0 0 8px",lineHeight:1.5}}>{card.fillBlank}</p>
+          <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0}}>🇮🇩 {card.meaning}</p>
+        </div>
+        {showHint&&<FadeIn><div style={{background:T.hiSoft,borderRadius:10,padding:"8px 12px",marginBottom:8}}><p style={{fontFamily:Fb,fontSize:13,color:"#B8860B",margin:0}}>💡 Starts with: <strong>"{card.fillAnswer.split("|")[0].slice(0,Math.ceil(card.fillAnswer.split("|")[0].length/2))}..."</strong></p></div></FadeIn>}
+        <input ref={fillRef} value={fillIn} onChange={e=>setFillIn(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&fillIn.trim())doFill()}} placeholder="Type your answer..." style={{width:"100%",padding:"14px 16px",borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:16,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",marginBottom:12}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+        <div style={{display:"flex",gap:10}}>{!showHint&&<Btn v="secondary" onClick={()=>setShowHint(true)} style={{width:"auto",flex:"0 0 auto",padding:"14px 20px"}}>Hint</Btn>}<Btn onClick={doFill} disabled={!fillIn.trim()}>Check</Btn></div>
+      </FadeIn>}
+
+      {exPhase==="fill-fb"&&<FadeIn key={`ff-${exIdx}`}>
+        <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:12}}>
+          <p style={{fontFamily:Fd,fontSize:17,fontWeight:500,color:T.text,margin:0,lineHeight:1.5}}>{card.fillBlank}</p>
+        </div>
+        <div style={{padding:14,borderRadius:12,background:isOk?T.okSoft:T.hiSoft,marginBottom:12}}>
+          {isOk?<p style={{fontFamily:Fb,fontSize:14,color:T.ok,fontWeight:500,margin:0}}>✨ Correct!</p>:<div><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:"#B8860B",margin:"0 0 5px"}}>Not quite</p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 2px"}}>You: <span style={{opacity:.6,textDecoration:"line-through"}}>{fillIn}</span></p><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:"0 0 5px"}}>Answer: <strong style={{color:T.ok}}>{card.fillAnswer.split("|")[0]}</strong></p><p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0,fontStyle:"italic"}}>"{card.context}"</p></div>}
+        </div>
+        <Btn onClick={exNext}>{isLast?"See results →":"Continue →"}</Btn>
+      </FadeIn>}
+
+      {exPhase==="rearrange"&&<RearrangeEx card={card} onResult={ok=>{if(ok)exGood();else exBad();exNext()}} onHelp={()=>{}}/>}
+      {exPhase==="recall"&&<RecallEx card={card} onResult={ok=>{if(ok)exGood();else exBad();exNext()}} onHelp={()=>{}}/>}
     </div>;
   }
 
-  // Fallback
-  return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:T.bg}}>
-    <p style={{fontFamily:Fb,fontSize:14,color:T.muted}}>Loading...</p>
-  </div>;
+  // No exercises available — finish session
+  if(stage==="exercises"&&!curExCard){
+    onComplete(compScore,Math.max(comprehension.length,1),resultsRef.current);
+    return null;
+  }
+
+  return null;
 }
 
 // Generic quiz for pool exercises
@@ -801,7 +890,7 @@ function App(){
     {screen==="placement"&&<PlacementScreen onComplete={onPlace}/>}
     {screen==="level-reveal"&&<LevelRevealScreen level={level} onContinue={()=>setScreen("lesson")}/>}
     {screen==="lesson"&&<LessonScreen cards={allCards} onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
-    {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp}/>}
+    {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} cards={allCards} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp}/>}
     {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} onContinue={()=>setScreen("tomorrow")}/>}
     {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={startSession} onRestart={onReset}/>}
     {screen==="admin"&&<AdminPanel onBack={()=>setScreen(lessons>0?"welcome-back":"welcome")}/>}
