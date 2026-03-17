@@ -516,15 +516,19 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
       // Try direct lookup by card_id, then by phrase text
       let card=cardMap[cid]||cardMap[String(cid)];
       if(!card&&tp.phrase){card=cardMap["phrase:"+tp.phrase.toLowerCase()]}
-      if(!card)return null;
       // Ensure card has phrase data (handle nested data JSONB)
-      const resolved=card.phrase?card:{...card,...(card.data||{})};
+      let resolved;
+      if(card){resolved=card.phrase?card:{...card,...(card.data||{})}}
+      else{
+        // No matching card found — build a minimal card from target phrase data
+        resolved={id:cid,card_id:cid,phrase:tp.phrase||"",meaning:tp.meaning||"",meaningEn:tp.meaningEn||tp.meaning_en||"",context:tp.context||tp.sentence||("Use: \""+tp.phrase+"\""),usage:tp.usage||"",wrongOptions:tp.wrongOptions||tp.wrong_options||[],fillBlank:tp.fillBlank||tp.fill_blank||null,fillAnswer:tp.fillAnswer||tp.fill_answer||null,rearrange:tp.rearrange||null};
+      }
       const cardId=resolved.id||resolved.card_id||cid;
-      const st=allStats[cardId]||allStats[resolved.id]||allStats[resolved.card_id];
+      const st=allStats[cardId]||allStats[String(cardId)]||allStats[resolved.id]||allStats[resolved.card_id];
       const m=st?st.mastery:0;
       const exType=exerciseForMastery(m);
       return{card:resolved,exType,card_id:cid};
-    }).filter(Boolean);
+    });
   });
 
   const[stage,setStage]=useState("read"); // read, comp, highlight, exercises
