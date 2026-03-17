@@ -134,6 +134,21 @@ async function apiContentStats(){
   const r=await fetch(window.API_URL+"/api/admin/content-stats",{headers:{"Authorization":"Bearer "+t}});
   return r.ok?await r.json():null;
 }
+async function apiUploadListening(exercises){
+  const t=getToken();if(!t)throw new Error("Not authenticated");
+  const r=await fetch(window.API_URL+"/api/admin/listening/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({exercises})});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||"Upload failed");return j;
+}
+async function apiGetListening(){
+  const t=getToken();if(!t)return[];
+  const r=await fetch(window.API_URL+"/api/admin/listening",{headers:{"Authorization":"Bearer "+t}});
+  return r.ok?(await r.json()).exercises||[]:[];
+}
+async function apiDeleteListening(exerciseId){
+  const t=getToken();
+  const r=await fetch(window.API_URL+"/api/admin/listening/"+exerciseId,{method:"DELETE",headers:{"Authorization":"Bearer "+t}});
+  return r.ok;
+}
 async function apiComposeSession(){
   const t=getToken();if(!t)return null;
   const r=await fetch(window.API_URL+"/api/session/compose",{headers:{"Authorization":"Bearer "+t}});
@@ -280,6 +295,7 @@ function AdminPanel({onBack}){
   const[cards,setCards]=useState([]);
   const[passages,setPassages]=useState([]);
   const[exercises,setExercises]=useState([]);
+  const[listening,setListening]=useState([]);
   const[stats,setStats]=useState(null);
   const[contentStats,setContentStats]=useState(null);
   const[loading,setLoading]=useState(true);
@@ -288,10 +304,10 @@ function AdminPanel({onBack}){
 
   const loadData=async()=>{
     setLoading(true);
-    const[c,p,e,s,cs]=await Promise.all([
-      apiLoadCards(),apiGetPassages(),apiGetExercises(),apiAdminStats(),apiContentStats()
+    const[c,p,e,s,cs,li]=await Promise.all([
+      apiLoadCards(),apiGetPassages(),apiGetExercises(),apiAdminStats(),apiContentStats(),apiGetListening()
     ]);
-    setCards(c);setPassages(p);setExercises(e);setStats(s);setContentStats(cs);
+    setCards(c);setPassages(p);setExercises(e);setStats(s);setContentStats(cs);setListening(li);
     setLoading(false);
   };
   useEffect(()=>{loadData()},[]);
@@ -307,13 +323,18 @@ function AdminPanel({onBack}){
   const uploadExercises=async()=>{
     try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadExercises(arr);flash(`Uploaded ${arr.length} exercises`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
   };
+  const uploadListening=async()=>{
+    try{const data=JSON.parse(jsonInput);const arr=Array.isArray(data)?data:[data];await apiUploadListening(arr);flash(`Uploaded ${arr.length} listening exercises`);setJsonInput("");loadData()}catch(e){flash("Error: "+e.message)}
+  };
   const deleteCard=async(id)=>{if(await apiDeleteCard(id)){flash("Card deleted");loadData()}};
   const deletePassage=async(id)=>{if(await apiDeletePassage(id)){flash("Passage deleted");loadData()}};
+  const deleteListeningEx=async(id)=>{if(await apiDeleteListening(id)){flash("Listening exercise deleted");loadData()}};
 
   const tabs=[
     {id:"cards",label:"Cards"},
     {id:"passages",label:"Passages"},
     {id:"exercises",label:"Exercises"},
+    {id:"listening",label:"Listening"},
     {id:"stats",label:"Stats"}
   ];
 
@@ -400,6 +421,25 @@ function AdminPanel({onBack}){
       </div>
     </div>}
 
+    {!loading&&tab==="listening"&&<div>
+      <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
+        <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Listening Exercises (JSON)</h3>
+        <div style={{marginBottom:10}}><FilePickBtn/></div>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"exercise_id":"l1","level":"B1","exercise_type":"dictation","data":{"text":"..."}}]' style={inputStyle}/>
+        <div style={{marginTop:12}}><Btn onClick={uploadListening} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
+      </div>
+      <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{listening.length} Listening Exercises</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {listening.map((ex,i)=><div key={ex.exercise_id||i} style={{background:T.card,borderRadius:12,padding:14,boxShadow:T.shadow,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0}}>{ex.exercise_id||"—"}</p>
+            <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"2px 0 0"}}>Type: {ex.exercise_type||"—"} · Level: {ex.level||"—"}</p>
+          </div>
+          <button onClick={()=>deleteListeningEx(ex.exercise_id)} style={{background:"#FFF0F0",border:"1px solid #FFD0D0",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:"#C0392B",flexShrink:0,marginLeft:10}}>Delete</button>
+        </div>)}
+      </div>
+    </div>}
+
     {!loading&&tab==="stats"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
         {[
@@ -407,6 +447,7 @@ function AdminPanel({onBack}){
           {label:"Cards",val:cards.length,color:T.ok,bg:T.okSoft},
           {label:"Passages",val:contentStats?.passage_count??passages.length,color:T.purple,bg:T.purpleSoft},
           {label:"Exercises",val:contentStats?.exercise_count??exercises.length,color:T.teal,bg:T.tealSoft},
+          {label:"Listening",val:listening.length,color:T.navy,bg:T.navySoft},
         ].map((s,i)=><div key={i} style={{background:T.card,borderRadius:14,padding:18,boxShadow:T.shadow,textAlign:"center"}}>
           <div style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:s.color}}>{s.val}</div>
           <div style={{fontFamily:Fb,fontSize:12,color:T.muted,marginTop:4}}>{s.label}</div>
@@ -489,7 +530,7 @@ function LessonScreen({cards,onComplete,allStats,lpp}){
 /* ═══════════════════════════════════════════════
    READING SCREEN
    ═══════════════════════════════════════════════ */
-function ReadingScreen({session,cards,onComplete,allStats,lpp}){
+function ReadingScreen({session,cards,onComplete,allStats,lpp,listeningExercise}){
   const passage=session.passage;
   const pData=passage.data||passage;
   const text=pData.text||"";
@@ -533,7 +574,7 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
     return result;
   });
 
-  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises, recall, retest
+  const[stage,setStage]=useState("read"); // read, comp, highlight, exercises, listening, recall, retest
   const[compIdx,setCompIdx]=useState(0);
   const[compSel,setCompSel]=useState(null);
   const[compShow,setCompShow]=useState(false);
@@ -649,9 +690,13 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
     return[correct,...wrongs.slice(0,3)].sort(()=>Math.random()-.5);
   };
   const startRecall=()=>{setStage("recall");setRcIdx(0);setRcSel(null);setRcShow(false);setRcScore(0);setRcWrong([]);setRcOpts(buildRcOpts(0))};
+  const goToListeningOrRecall=()=>{
+    if(listeningExercise){setStage("listening")}
+    else{startRecall()}
+  };
   const exNext=()=>{
     if(exIdx<exCards.length-1){const ni=exIdx+1;setExIdx(ni);initExercise(ni)}
-    else{startRecall()}
+    else{goToListeningOrRecall()}
   };
   const doQuiz=(opt,i)=>{if(sel!==null)return;setSel(i);const ok=opt===curExCard.card.phrase;setIsOk(ok);if(ok)exGood();else exBad()};
   const doFill=()=>{const a=fillIn.trim().toLowerCase().replace(/[.,!?]/g,""),parts=curExCard.card.fillAnswer.toLowerCase().replace(/[.,!?]/g,"").split("|"),ok=parts.some(p=>a.includes(p.trim()));setIsOk(ok);if(ok)exGood();else exBad();setExPhase("fill-fb")};
@@ -734,9 +779,9 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
         </div>
       </FadeIn>}
       <FadeIn delay={450}>
-        <Btn onClick={()=>{if(exCards.length>0){setStage("exercises");initExercise(0)}else{onComplete(compScore,Math.max(comprehension.length,1),resultsRef.current)}}}>
+        <Btn onClick={()=>{if(exCards.length>0){setStage("exercises");initExercise(0)}else if(listeningExercise){setStage("listening")}else{startRecall()}}}>
           <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            {exCards.length>0?"Continue to exercises":"Finish"}<ArrowRight size={18}/>
+            {exCards.length>0?"Continue to exercises":listeningExercise?"Continue to listening":"Continue"}<ArrowRight size={18}/>
           </span>
         </Btn>
       </FadeIn>
@@ -817,10 +862,15 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
     </div>;
   }
 
-  // No exercises available — go straight to recall
+  // No exercises available — go to listening or recall
   if(stage==="exercises"&&!curExCard){
-    startRecall();
+    goToListeningOrRecall();
     return null;
+  }
+
+  // ─── STAGE: LISTENING ───
+  if(stage==="listening"&&listeningExercise){
+    return <ListeningScreen exercise={listeningExercise} onComplete={(ok)=>{startRecall()}}/>;
   }
 
   // ─── STAGE: RECALL CHECK ───
@@ -968,6 +1018,400 @@ function GenericQuiz({options,correct,onResult}){
   </div>
 }
 
+/* ═══════════════════════════════════════════════
+   LISTENING SCREEN
+   ═══════════════════════════════════════════════ */
+function ListeningScreen({exercise,onComplete}){
+  const exData=exercise.data||exercise;
+  const exType=exercise.exercise_type||exercise.type||"dictation";
+  const exId=exercise.exercise_id||exercise.id||"";
+
+  // TTS helpers
+  const speak=(text,rate=1.0)=>{
+    if(!window.speechSynthesis)return;
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.rate=rate;u.lang="en-US";
+    const voices=window.speechSynthesis.getVoices();
+    const enVoice=voices.find(v=>v.lang.startsWith("en"));
+    if(enVoice)u.voice=enVoice;
+    window.speechSynthesis.speak(u);
+  };
+
+  // Ensure voices are loaded
+  useEffect(()=>{
+    if(window.speechSynthesis){window.speechSynthesis.getVoices()}
+    return ()=>{if(window.speechSynthesis)window.speechSynthesis.cancel()};
+  },[]);
+
+  if(exType==="dictation")return <DictationEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
+  if(exType==="listen_comprehension")return <ListenCompEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
+  if(exType==="connected_speech")return <ConnectedSpeechEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
+  if(exType==="speed_drill")return <SpeedDrillEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
+  return <div style={{padding:24}}><p>Unknown listening exercise type: {exType}</p><Btn onClick={()=>onComplete(false)}>Skip</Btn></div>;
+}
+
+function SpeedPills({speeds,current,onSelect}){
+  return <div style={{display:"flex",gap:6}}>
+    {speeds.map(s=><button key={s} onClick={()=>onSelect(s)} style={{
+      background:current===s?T.teal:T.card,color:current===s?"#fff":T.text,
+      border:`1.5px solid ${current===s?T.teal:T.border}`,borderRadius:20,
+      padding:"6px 14px",cursor:"pointer",fontFamily:Fb,fontSize:13,fontWeight:600,
+      transition:"all .2s"
+    }}>{s}x</button>)}
+  </div>;
+}
+
+function PlayBtn({onClick,label="Play",size="normal"}){
+  const sz=size==="large"?56:42;
+  return <button onClick={onClick} style={{
+    width:sz,height:sz,borderRadius:sz/2,background:`linear-gradient(135deg,${T.teal},${T.ok})`,
+    border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+    boxShadow:`0 4px 15px ${T.teal}40`,transition:"transform .15s"
+  }} onMouseDown={e=>e.currentTarget.style.transform="scale(0.93)"} onMouseUp={e=>e.currentTarget.style.transform=""}>
+    <svg width={sz*.4} height={sz*.4} viewBox="0 0 24 24" fill="#fff" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>
+  </button>;
+}
+
+function DictationEx({data,exId,speak,onComplete}){
+  const text=data.text||"";
+  const[input,setInput]=useState("");
+  const[submitted,setSubmitted]=useState(false);
+  const[speed,setSpeed]=useState(1.0);
+  const[wordResults,setWordResults]=useState([]);
+  const ref=useRef(null);
+
+  const play=()=>speak(text,speed);
+  useEffect(()=>{setTimeout(()=>ref.current?.focus(),200)},[]);
+
+  const levenshtein=(a,b)=>{
+    const m=a.length,n=b.length;const dp=Array.from({length:m+1},()=>Array(n+1).fill(0));
+    for(let i=0;i<=m;i++)dp[i][0]=i;for(let j=0;j<=n;j++)dp[0][j]=j;
+    for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+    return dp[m][n];
+  };
+
+  const submit=()=>{
+    const correctWords=text.toLowerCase().replace(/[.,!?;:'"]/g,"").split(/\s+/).filter(Boolean);
+    const userWords=input.trim().toLowerCase().replace(/[.,!?;:'"]/g,"").split(/\s+/).filter(Boolean);
+    const results=correctWords.map((cw,i)=>{
+      const uw=userWords[i]||"";
+      if(uw===cw)return{correct:cw,user:uw,status:"exact"};
+      if(levenshtein(uw,cw)<=1)return{correct:cw,user:uw,status:"close"};
+      return{correct:cw,user:uw,status:"wrong"};
+    });
+    // Extra words user typed
+    for(let i=correctWords.length;i<userWords.length;i++){
+      results.push({correct:"",user:userWords[i],status:"extra"});
+    }
+    setWordResults(results);setSubmitted(true);
+    const correctCount=results.filter(r=>r.status==="exact"||r.status==="close").length;
+    const ok=correctCount>=correctWords.length*0.7;
+    apiLogEncounter({exercise_id:exId,encounter_type:"dictation",result:ok?"correct":"incorrect"});
+  };
+
+  const statusColor={exact:T.ok,close:"#B8860B",wrong:"#C0392B",extra:"#C0392B"};
+  const statusBg={exact:T.okSoft,close:T.hiSoft,wrong:"#FFF0F0",extra:"#FFF0F0"};
+
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    <FadeIn>
+      <Badge color={T.teal} bg={T.tealSoft}>🎧 LISTENING</Badge>
+      <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Dictation</h2>
+      <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 20px"}}>Listen carefully and type what you hear.</p>
+    </FadeIn>
+    <FadeIn delay={150}>
+      <div style={{background:T.card,borderRadius:16,padding:24,boxShadow:T.shadow,marginBottom:20,display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+        <PlayBtn onClick={play} size="large"/>
+        <SpeedPills speeds={[0.75,1.0,1.25]} current={speed} onSelect={s=>{setSpeed(s);speak(text,s)}}/>
+        <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+          <RotateCcw size={14}/>Listen again
+        </button>
+      </div>
+    </FadeIn>
+    {!submitted&&<FadeIn delay={300}>
+      <textarea ref={ref} value={input} onChange={e=>setInput(e.target.value)} placeholder="Type what you heard..."
+        style={{width:"100%",minHeight:100,padding:16,borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:"'Courier New',monospace",fontSize:16,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",marginBottom:16,resize:"vertical",lineHeight:1.6}}
+        onFocus={e=>e.target.style.borderColor=T.teal} onBlur={e=>e.target.style.borderColor=T.border}/>
+      <Btn onClick={submit} disabled={!input.trim()} style={{background:T.teal}}>Check</Btn>
+    </FadeIn>}
+    {submitted&&<FadeIn>
+      <div style={{background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,marginBottom:16}}>
+        <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.muted,margin:"0 0 10px"}}>Word comparison:</p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {wordResults.map((w,i)=><span key={i} style={{
+            fontFamily:"'Courier New',monospace",fontSize:15,fontWeight:600,
+            background:statusBg[w.status],color:statusColor[w.status],
+            padding:"4px 8px",borderRadius:6,border:`1px solid ${statusColor[w.status]}25`
+          }}>{w.user||"___"}</span>)}
+        </div>
+      </div>
+      <div style={{background:T.okSoft,borderRadius:14,padding:16,marginBottom:16}}>
+        <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.ok,margin:"0 0 6px"}}>Correct sentence:</p>
+        <p style={{fontFamily:Fb,fontSize:15,color:T.text,margin:0,lineHeight:1.6}}>{text}</p>
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:4,fontFamily:Fb,fontSize:11,color:T.ok}}><span style={{width:10,height:10,borderRadius:3,background:T.okSoft,border:`1px solid ${T.ok}`}}/> Exact</span>
+        <span style={{display:"inline-flex",alignItems:"center",gap:4,fontFamily:Fb,fontSize:11,color:"#B8860B"}}><span style={{width:10,height:10,borderRadius:3,background:T.hiSoft,border:"1px solid #B8860B"}}/> Close</span>
+        <span style={{display:"inline-flex",alignItems:"center",gap:4,fontFamily:Fb,fontSize:11,color:"#C0392B"}}><span style={{width:10,height:10,borderRadius:3,background:"#FFF0F0",border:"1px solid #C0392B"}}/> Wrong</span>
+      </div>
+      <Btn onClick={()=>{const correctCount=wordResults.filter(r=>r.status==="exact"||r.status==="close").length;onComplete(correctCount>=wordResults.filter(r=>r.status!=="extra").length*0.7)}}>Continue →</Btn>
+    </FadeIn>}
+  </div>;
+}
+
+function ListenCompEx({data,exId,speak,onComplete}){
+  const text=data.text||"";
+  const questions=data.questions||[];
+  const[stage,setStage]=useState("listen"); // listen, questions, reveal
+  const[qIdx,setQIdx]=useState(0);
+  const[qSel,setQSel]=useState(null);
+  const[qShow,setQShow]=useState(false);
+  const[score,setScore]=useState(0);
+  const[speed,setSpeed]=useState(1.0);
+  const[played,setPlayed]=useState(false);
+
+  const play=()=>{speak(text,speed);setPlayed(true)};
+
+  const pickAnswer=(opt,i)=>{
+    if(qSel!==null)return;
+    setQSel(i);setQShow(true);
+    const q=questions[qIdx];
+    const correctIdx=typeof q.correct==="number"?q.correct:q.options.indexOf(q.correct);
+    const correct=i===correctIdx;
+    if(correct)setScore(s=>s+1);
+    apiLogEncounter({exercise_id:exId,encounter_type:"listen_comprehension",result:correct?"correct":"incorrect"});
+    setTimeout(()=>{
+      if(qIdx<questions.length-1){setQIdx(qIdx+1);setQSel(null);setQShow(false)}
+      else{setStage("reveal")}
+    },1200);
+  };
+
+  if(stage==="listen"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.teal} bg={T.tealSoft}>🎧 LISTENING</Badge>
+        <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Listen & Understand</h2>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 24px"}}>Listen to the passage. The text is hidden — just listen!</p>
+      </FadeIn>
+      <FadeIn delay={200}>
+        <div style={{background:T.card,borderRadius:16,padding:32,boxShadow:T.shadow,marginBottom:24,display:"flex",flexDirection:"column",alignItems:"center",gap:20}}>
+          <div style={{width:80,height:80,borderRadius:40,background:T.tealSoft,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <PlayBtn onClick={play} size="large"/>
+          </div>
+          <SpeedPills speeds={[0.75,1.0,1.25]} current={speed} onSelect={s=>{setSpeed(s);speak(text,s)}}/>
+          <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+            <RotateCcw size={14}/>Replay
+          </button>
+        </div>
+      </FadeIn>
+      <FadeIn delay={400}>
+        <Btn onClick={()=>setStage("questions")} disabled={!played} style={{background:T.teal}}>
+          <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Answer questions<ArrowRight size={18}/></span>
+        </Btn>
+      </FadeIn>
+    </div>;
+  }
+
+  if(stage==="questions"&&questions[qIdx]){
+    const q=questions[qIdx];
+    const opts=q.options||[];
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+      <FadeIn>
+        <Badge color={T.teal} bg={T.tealSoft}>🎧 COMPREHENSION</Badge>
+        <Bar current={qIdx+1} total={questions.length}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8,marginBottom:16}}>
+          <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>Question {qIdx+1} of {questions.length}</span>
+          <button onClick={play} style={{background:T.tealSoft,border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,color:T.teal,display:"flex",alignItems:"center",gap:4}}>
+            <RotateCcw size={12}/>Replay
+          </button>
+        </div>
+      </FadeIn>
+      <FadeIn key={qIdx}>
+        <p style={{fontFamily:Fb,fontSize:17,fontWeight:500,color:T.text,margin:"0 0 20px",lineHeight:1.5}}>{q.question}</p>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          {opts.map((o,i)=>{
+            const correctIdx=typeof q.correct==="number"?q.correct:opts.indexOf(q.correct);
+            const isCorrect=i===correctIdx;
+            const isSel=qSel===i;
+            let bg=T.card,bdr=T.border;
+            if(qShow){if(isCorrect){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}
+            return <button key={i} onClick={()=>pickAnswer(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:qSel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>
+              {qShow&&isCorrect&&<Check size={16} color={T.ok} strokeWidth={3}/>}{o}
+            </button>;
+          })}
+        </div>
+      </FadeIn>
+    </div>;
+  }
+
+  // Reveal stage
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    <FadeIn>
+      <Badge color={T.teal} bg={T.tealSoft}>🎧 REVEAL</Badge>
+      <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Here's what you heard</h2>
+      <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 16px"}}>You got {score} out of {questions.length} correct.</p>
+    </FadeIn>
+    <FadeIn delay={200}>
+      <div style={{background:T.card,borderRadius:16,padding:24,boxShadow:T.shadow,marginBottom:20}}>
+        <p style={{fontFamily:Fb,fontSize:15,color:T.text,lineHeight:1.8,margin:0,whiteSpace:"pre-wrap"}}>{text}</p>
+      </div>
+      <div style={{display:"flex",gap:10,marginBottom:16}}>
+        <button onClick={play} style={{background:T.tealSoft,border:"none",borderRadius:10,padding:"10px 16px",cursor:"pointer",fontFamily:Fb,fontSize:13,fontWeight:600,color:T.teal,display:"flex",alignItems:"center",gap:6}}>
+          <RotateCcw size={14}/>Listen while reading
+        </button>
+      </div>
+    </FadeIn>
+    <FadeIn delay={400}>
+      <Btn onClick={()=>onComplete(score>=questions.length*0.5)}>Continue →</Btn>
+    </FadeIn>
+  </div>;
+}
+
+function ConnectedSpeechEx({data,exId,speak,onComplete}){
+  const reduced=data.reduced||"";
+  const full=data.full||"";
+  const sentence=data.sentence||"";
+  const options=data.options||[full];
+  const correct=data.correct||full;
+  const example=data.example||sentence;
+
+  const[sel,setSel]=useState(null);
+  const[show,setShow]=useState(false);
+  const[isOk,setIsOk]=useState(null);
+
+  const play=()=>speak(reduced,0.9);
+  useEffect(()=>{setTimeout(play,500)},[]);
+
+  const pick=(opt,i)=>{
+    if(sel!==null)return;
+    setSel(i);setShow(true);
+    const ok=opt===correct;
+    setIsOk(ok);
+    apiLogEncounter({exercise_id:exId,encounter_type:"connected_speech",result:ok?"correct":"incorrect"});
+  };
+
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    <FadeIn>
+      <Badge color={T.teal} bg={T.tealSoft}>🎧 LISTENING</Badge>
+      <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Connected Speech</h2>
+      <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 20px"}}>What's the full form of what you hear?</p>
+    </FadeIn>
+    <FadeIn delay={200}>
+      <div style={{background:T.card,borderRadius:16,padding:24,boxShadow:T.shadow,marginBottom:20,display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+        <PlayBtn onClick={play} size="large"/>
+        <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+          <RotateCcw size={14}/>Listen again
+        </button>
+      </div>
+    </FadeIn>
+    <FadeIn delay={300}>
+      <div style={{display:"flex",flexDirection:"column",gap:9}}>
+        {options.map((o,i)=>{
+          const isCorrect=o===correct;
+          const isSel=sel===i;
+          let bg=T.card,bdr=T.border;
+          if(show){if(isCorrect){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}
+          return <button key={i} onClick={()=>pick(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:sel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>
+            {show&&isCorrect&&<Check size={16} color={T.ok} strokeWidth={3}/>}{o}
+          </button>;
+        })}
+      </div>
+    </FadeIn>
+    {show&&<FadeIn delay={100}>
+      <div style={{marginTop:16,padding:16,borderRadius:14,background:isOk?T.okSoft:T.hiSoft}}>
+        <p style={{fontFamily:Fb,fontSize:15,fontWeight:600,color:isOk?T.ok:"#B8860B",margin:"0 0 8px"}}>{isOk?"Correct!":"Not quite"}</p>
+        <p style={{fontFamily:Fb,fontSize:15,color:T.text,margin:"0 0 6px"}}><strong style={{color:T.teal}}>"{reduced}"</strong> = <strong>{full}</strong></p>
+        <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:0,fontStyle:"italic"}}>Example: "{example}"</p>
+      </div>
+      <div style={{marginTop:14}}><Btn onClick={()=>onComplete(isOk)}>Continue →</Btn></div>
+    </FadeIn>}
+  </div>;
+}
+
+function SpeedDrillEx({data,exId,speak,onComplete}){
+  const text=data.text||"";
+  const speeds=data.speeds||[0.75,1.0,1.25];
+  const questions=data.questions||[];
+  const[speedIdx,setSpeedIdx]=useState(0);
+  const[qIdx,setQIdx]=useState(0);
+  const[sel,setSel]=useState(null);
+  const[show,setShow]=useState(false);
+  const[score,setScore]=useState(0);
+  const[played,setPlayed]=useState(false);
+
+  const curSpeed=speeds[speedIdx];
+  const play=()=>{speak(text,curSpeed);setPlayed(true)};
+
+  // If we have questions, show them after each speed level
+  // If no questions, just play at increasing speeds and move on
+  const hasQ=questions.length>0;
+
+  const pickAnswer=(opt,i)=>{
+    if(sel!==null)return;
+    setSel(i);setShow(true);
+    const q=questions[qIdx]||questions[0];
+    const correctIdx=typeof q.correct==="number"?q.correct:(q.options||[]).indexOf(q.correct);
+    const correct=i===correctIdx;
+    if(correct)setScore(s=>s+1);
+    apiLogEncounter({exercise_id:exId,encounter_type:"speed_drill",result:correct?"correct":"incorrect"});
+    setTimeout(()=>{
+      if(speedIdx<speeds.length-1){
+        setSpeedIdx(speedIdx+1);setSel(null);setShow(false);setPlayed(false);
+        if(hasQ&&qIdx<questions.length-1)setQIdx(qIdx+1);
+      }else{
+        // Done
+      }
+    },1200);
+  };
+
+  const allDone=show&&speedIdx>=speeds.length-1;
+  const q=hasQ?(questions[Math.min(qIdx,questions.length-1)]):null;
+
+  return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
+    <FadeIn>
+      <Badge color={T.teal} bg={T.tealSoft}>🎧 LISTENING</Badge>
+      <h2 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"12px 0 6px"}}>Speed Drill</h2>
+      <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:"0 0 6px"}}>Listen at increasing speeds.</p>
+      <Bar current={speedIdx+1} total={speeds.length}/>
+    </FadeIn>
+    <FadeIn delay={150} key={speedIdx}>
+      <div style={{background:T.card,borderRadius:16,padding:24,boxShadow:T.shadow,margin:"16px 0",display:"flex",flexDirection:"column",alignItems:"center",gap:16}}>
+        <div style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:T.teal}}>{curSpeed}x</div>
+        <PlayBtn onClick={play} size="large"/>
+        <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
+          <RotateCcw size={14}/>Replay at {curSpeed}x
+        </button>
+      </div>
+    </FadeIn>
+    {played&&!show&&q&&<FadeIn>
+      <p style={{fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,margin:"0 0 14px"}}>{q.question||"What did you hear?"}</p>
+      <div style={{display:"flex",flexDirection:"column",gap:9}}>
+        {(q.options||[]).map((o,i)=>{
+          const correctIdx=typeof q.correct==="number"?q.correct:(q.options||[]).indexOf(q.correct);
+          const isCorrect=i===correctIdx;
+          const isSel=sel===i;
+          let bg=T.card,bdr=T.border;
+          if(show){if(isCorrect){bg=T.okSoft;bdr=T.ok}else if(isSel){bg="#FFF5F0";bdr="#E07A5F"}}
+          return <button key={i} onClick={()=>pickAnswer(o,i)} style={{width:"100%",background:bg,border:`1.5px solid ${bdr}`,borderRadius:12,padding:"13px 16px",cursor:sel!==null?"default":"pointer",fontFamily:Fb,fontSize:15,fontWeight:500,color:T.text,textAlign:"left",transition:"all .3s",display:"flex",alignItems:"center",gap:10}}>
+            {show&&isCorrect&&<Check size={16} color={T.ok} strokeWidth={3}/>}{o}
+          </button>;
+        })}
+      </div>
+    </FadeIn>}
+    {played&&!hasQ&&<FadeIn>
+      <Btn onClick={()=>{
+        if(speedIdx<speeds.length-1){setSpeedIdx(speedIdx+1);setPlayed(false)}
+        else{onComplete(true)}
+      }} style={{marginTop:16,background:T.teal}}>
+        {speedIdx<speeds.length-1?"Next speed →":"Complete →"}
+      </Btn>
+    </FadeIn>}
+    {allDone&&<FadeIn>
+      <div style={{marginTop:16}}><Btn onClick={()=>onComplete(score>=Math.ceil(speeds.length*0.5))}>Continue →</Btn></div>
+    </FadeIn>}
+  </div>;
+}
+
 function CelebrationScreen({score,total,streak,lessonCards,allStats,lpp,recallMsg,onContinue}){const[showC,setShowC]=useState(true);const pct=Math.round((score/total)*100);useEffect(()=>{const t=setTimeout(()=>setShowC(false),3500);return ()=>clearTimeout(t)},[]);const totalSeen=Object.values(allStats).filter(s=>s.seen>0).length;const totalMastered=Object.values(allStats).filter(s=>s.mastery>=4).length;const proofPhrases=(lessonCards||[]).slice(0,4);const P=getLPP(lpp);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:32,background:T.bg}}>{showC&&<Confetti/>}<FadeIn><div style={{width:80,height:80,borderRadius:40,background:T.okSoft,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px"}}><Trophy size={36} color={T.ok}/></div></FadeIn><FadeIn delay={300}><h2 style={{fontFamily:Fd,fontSize:30,fontWeight:700,color:T.text,textAlign:"center",margin:"0 0 8px"}}>Session complete!</h2>{recallMsg?<p style={{fontFamily:Fb,fontSize:15,color:T.navy,textAlign:"center",margin:"0 0 28px",fontWeight:500}}>{recallMsg}</p>:<p style={{fontFamily:Fb,fontSize:15,color:T.muted,textAlign:"center",margin:"0 0 28px"}}>{P.celebrationMsg(pct)}</p>}</FadeIn><FadeIn delay={500}><div style={{background:T.card,borderRadius:20,padding:24,width:"100%",maxWidth:360,boxShadow:T.shadow,marginBottom:28}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:18}}><div style={{background:T.accentSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.accent}}>{pct}%</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>accuracy</div></div><div style={{background:T.okSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.ok}}>{totalSeen}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>seen</div></div><div style={{background:T.purpleSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.purple}}>{totalMastered}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>mastered</div></div><div style={{background:T.hiSoft,borderRadius:10,padding:10,textAlign:"center"}}><div style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:"#B8860B"}}>{streak}</div><div style={{fontFamily:Fb,fontSize:10,color:T.muted}}>streak</div></div></div><div style={{background:T.bg,borderRadius:12,padding:14}}><p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>{P.proofWallTitle}</p>{proofPhrases.map(c=>{const st=allStats[c.id];const ml=["New","Seen","Familiar","Practiced","Strong","Mastered"][st?Math.min(st.mastery,5):0];return <p key={c.id} style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"0 0 3px",lineHeight:1.5}}><em style={{color:T.text}}>"{c.phrase}"</em> <span style={{fontSize:11,color:T.purple}}>({ml})</span></p>})}</div></div></FadeIn><FadeIn delay={700} style={{width:"100%",maxWidth:360}}><Btn onClick={onContinue}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>See what's next<ArrowRight size={18}/></span></Btn></FadeIn></div>}
 
 function TomorrowScreen({lppProfile,onNextLesson,onRestart}){const teaser=rnd(TT);const P=getLPP(lppProfile);return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:32,background:T.bg}}><FadeIn><Badge>COMING TOMORROW</Badge><h2 style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:T.text,margin:"12px 0 8px"}}>{teaser.title}</h2><p style={{fontFamily:Fb,fontSize:15,color:T.muted,margin:"0 0 32px",lineHeight:1.5}}>{teaser.hint}</p></FadeIn><FadeIn delay={300}><div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:24}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}><div style={{width:40,height:40,borderRadius:10,background:`${P.color}15`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{P.icon}</div><div><p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Your learning style</p><p style={{fontFamily:Fb,fontSize:14,fontWeight:500,color:T.text,margin:0}}>{P.label}</p></div></div></div></FadeIn><FadeIn delay={500}><div style={{background:`linear-gradient(135deg,${P.color}08,${T.hi}15)`,borderRadius:16,padding:18,marginBottom:32,border:`1px solid ${T.border}`}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Heart size={16} color={P.color}/><span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:P.color}}>What's next</span></div><p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.6}}>{P.tomorrowHook}</p></div></FadeIn><FadeIn delay={700}><Btn onClick={onNextLesson}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>One more session<ArrowRight size={18}/></span></Btn><button onClick={onRestart} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.muted,cursor:"pointer",marginTop:16,display:"block",width:"100%",textAlign:"center",opacity:.5}}>Reset progress</button></FadeIn></div>}
@@ -1035,7 +1479,7 @@ function App(){
     setSessionLoading(true);
     const session=await apiComposeSession();
     setSessionLoading(false);
-    if(session&&session.type==="mixed"&&session.passage){
+    if(session&&(session.type==="mixed"||session.type==="mixed_with_listening")&&session.passage){
       setSessionData(session);
       setScreen("reading");
     }else{
@@ -1073,7 +1517,7 @@ function App(){
     {screen==="placement"&&<PlacementScreen onComplete={onPlace}/>}
     {screen==="level-reveal"&&<LevelRevealScreen level={level} onContinue={()=>setScreen("lesson")}/>}
     {screen==="lesson"&&<LessonScreen cards={allCards} onComplete={onLesson} allStats={cardStats} lpp={lpp}/>}
-    {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} cards={allCards} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp}/>}
+    {screen==="reading"&&sessionData&&<ReadingScreen session={sessionData} cards={allCards} onComplete={onReadingComplete} allStats={cardStats} lpp={lpp} listeningExercise={sessionData.listening_exercise||null}/>}
     {screen==="celebration"&&<CelebrationScreen score={lScore.s} total={lScore.t} streak={streak} lessonCards={lessonCards} allStats={cardStats} lpp={lpp} recallMsg={recallMsg} onContinue={()=>setScreen("tomorrow")}/>}
     {screen==="tomorrow"&&<TomorrowScreen lppProfile={lpp} onNextLesson={startSession} onRestart={onReset}/>}
     {screen==="admin"&&<AdminPanel onBack={()=>setScreen(lessons>0?"welcome-back":"welcome")}/>}
