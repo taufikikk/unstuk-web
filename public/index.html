@@ -517,6 +517,7 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
     setCompSel(i);setCompShow(true);
     const correct=opt===compQ.correct||(typeof compQ.correct==="number"&&i===compQ.correct);
     if(correct)setCompScore(s=>s+1);
+    apiLogEncounter({card_id:0,passage_id:passage.passage_id||passage.id,encounter_type:"comprehension",result:correct?"correct":"incorrect"});
     setTimeout(()=>{
       if(compIdx<comprehension.length-1){setCompIdx(compIdx+1);setCompSel(null);setCompShow(false)}
       else{setStage(targetPhrases.length>0?"highlight":"exercises")}
@@ -573,7 +574,7 @@ function ReadingScreen({session,onComplete,allStats,lpp}){
         </div>
       </FadeIn>
       <FadeIn delay={400}>
-        <Btn onClick={()=>setStage(comprehension.length>0?"comp":"highlight")}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Done reading<ArrowRight size={18}/></span></Btn>
+        <Btn onClick={()=>{apiLogEncounter({card_id:0,passage_id:passage.passage_id||passage.id,encounter_type:"reading",result:"seen"});setStage(comprehension.length>0?"comp":"highlight")}}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Done reading<ArrowRight size={18}/></span></Btn>
       </FadeIn>
     </div>;
   }
