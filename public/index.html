@@ -501,15 +501,29 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
 
   // Build exercise list from target phrases matched to actual card data
   const[exCards]=useState(()=>{
-    const cardMap={};(cards||[]).forEach(c=>{cardMap[c.id]=c;cardMap[c.card_id]=c});
+    const cardList=cards||[];
+    // Build lookup maps keyed by every possible identifier (string and number forms)
+    const cardMap={};
+    cardList.forEach(c=>{
+      if(c.id!=null){cardMap[c.id]=c;cardMap[String(c.id)]=c}
+      if(c.card_id!=null){cardMap[c.card_id]=c;cardMap[String(c.card_id)]=c}
+      // Also key by phrase for fallback matching
+      const phrase=(c.phrase||c.data?.phrase||"").toLowerCase();
+      if(phrase)cardMap["phrase:"+phrase]=c;
+    });
     return targetPhrases.map(tp=>{
       const cid=tp.card_id;
-      const card=cardMap[cid];
+      // Try direct lookup by card_id, then by phrase text
+      let card=cardMap[cid]||cardMap[String(cid)];
+      if(!card&&tp.phrase){card=cardMap["phrase:"+tp.phrase.toLowerCase()]}
       if(!card)return null;
-      const st=allStats[card.id]||allStats[card.card_id];
+      // Ensure card has phrase data (handle nested data JSONB)
+      const resolved=card.phrase?card:{...card,...(card.data||{})};
+      const cardId=resolved.id||resolved.card_id||cid;
+      const st=allStats[cardId]||allStats[resolved.id]||allStats[resolved.card_id];
       const m=st?st.mastery:0;
       const exType=exerciseForMastery(m);
-      return{card,exType,card_id:cid};
+      return{card:resolved,exType,card_id:cid};
     }).filter(Boolean);
   });
 
@@ -647,8 +661,8 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
 
   // ─── STAGE: HIGHLIGHT (same passage, phrases highlighted + meanings) ───
   if(stage==="highlight"){
-    // Build a lookup from phrase text to card data for meanings
-    const cardMap={};(cards||[]).forEach(c=>{cardMap[c.id]=c;cardMap[c.card_id]=c});
+    // Use exCards for meaning lookup since they already have resolved card data
+    const exCardMap={};exCards.forEach(ec=>{if(ec.card_id!=null)exCardMap[ec.card_id]=ec.card;if(ec.card?.phrase)exCardMap["phrase:"+ec.card.phrase.toLowerCase()]=ec.card});
     return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
       <FadeIn>
         <Badge color={T.accent} bg={T.accentSoft}>🎯 KEY PHRASES</Badge>
@@ -663,9 +677,9 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
         <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:24}}>
           {targetPhrases.map((tp,i)=>{
             const phrase=tp.phrase||tp;
-            const card=cardMap[tp.card_id];
-            const meaning=card?card.meaning:tp.meaning||"";
-            const meaningEn=card?card.meaningEn:tp.meaningEn||"";
+            const card=exCardMap[tp.card_id]||exCardMap["phrase:"+(phrase||"").toLowerCase()];
+            const meaning=card?(card.meaning||card.data?.meaning):tp.meaning||"";
+            const meaningEn=card?(card.meaningEn||card.data?.meaningEn):tp.meaningEn||"";
             return <div key={i} style={{background:T.accentSoft,borderRadius:12,padding:14,border:`1.5px solid ${T.accent}30`}}>
               <p style={{fontFamily:Fd,fontSize:16,fontWeight:600,color:T.accent,margin:"0 0 6px",fontStyle:"italic"}}>"{phrase}"</p>
               {meaning&&<p style={{fontFamily:Fb,fontSize:14,color:T.accent,fontWeight:600,margin:"0 0 3px"}}>🇮🇩 {meaning}</p>}
