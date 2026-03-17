@@ -324,6 +324,11 @@ function AdminPanel({onBack}){
   });
 
   const inputStyle={width:"100%",minHeight:120,padding:14,borderRadius:12,border:`1.5px solid ${T.border}`,fontFamily:"monospace",fontSize:13,color:T.text,background:T.bg,outline:"none",boxSizing:"border-box",resize:"vertical"};
+  const fileRef=useRef(null);
+  const pickFile=()=>{fileRef.current.value="";fileRef.current.click()};
+  const onFilePicked=(e)=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=(ev)=>{setJsonInput(ev.target.result)};r.readAsText(f)};
+  const fileBtnStyle={background:T.card,border:`1.5px solid ${T.border}`,borderRadius:10,padding:"8px 14px",cursor:"pointer",fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,display:"inline-flex",alignItems:"center",gap:6};
+  const FilePickBtn=()=><><input ref={fileRef} type="file" accept=".json" onChange={onFilePicked} style={{display:"none"}}/><button onClick={pickFile} style={fileBtnStyle}>Choose .json file</button></>;
 
   return <div style={{minHeight:"100vh",padding:20,background:T.bg}}>
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
@@ -342,6 +347,7 @@ function AdminPanel({onBack}){
     {!loading&&tab==="cards"&&<div>
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Cards (JSON)</h3>
+        <div style={{marginBottom:10}}><FilePickBtn/></div>
         <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"id":"c1","phrase":"...","meaning":"..."}]' style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadCards} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
@@ -361,6 +367,7 @@ function AdminPanel({onBack}){
     {!loading&&tab==="passages"&&<div>
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Passages (JSON)</h3>
+        <div style={{marginBottom:10}}><FilePickBtn/></div>
         <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"passage_id":"p1","level":"B1","title":"...","data":{...}}]' style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadPassages} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
@@ -379,6 +386,7 @@ function AdminPanel({onBack}){
     {!loading&&tab==="exercises"&&<div>
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Exercises (JSON)</h3>
+        <div style={{marginBottom:10}}><FilePickBtn/></div>
         <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"card_id":1,"exercise_type":"fill_blank","exercise_id":"e1","data":{...}}]' style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadExercises} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
