@@ -511,24 +511,26 @@ function ReadingScreen({session,cards,onComplete,allStats,lpp}){
       const phrase=(c.phrase||c.data?.phrase||"").toLowerCase();
       if(phrase)cardMap["phrase:"+phrase]=c;
     });
-    return targetPhrases.map(tp=>{
+    // 2 exercises per phrase: easier then harder, based on mastery
+    const pairs=m=>m<=1?["learn","quiz"]:m===2?["quiz","fill"]:m===3?["fill","rearrange"]:["rearrange","recall"];
+    const result=[];
+    targetPhrases.forEach(tp=>{
       const cid=tp.card_id;
-      // Try direct lookup by card_id, then by phrase text
       let card=cardMap[cid]||cardMap[String(cid)];
       if(!card&&tp.phrase){card=cardMap["phrase:"+tp.phrase.toLowerCase()]}
-      // Ensure card has phrase data (handle nested data JSONB)
       let resolved;
       if(card){resolved=card.phrase?card:{...card,...(card.data||{})}}
       else{
-        // No matching card found — build a minimal card from target phrase data
         resolved={id:cid,card_id:cid,phrase:tp.phrase||"",meaning:tp.meaning||"",meaningEn:tp.meaningEn||tp.meaning_en||"",context:tp.context||tp.sentence||("Use: \""+tp.phrase+"\""),usage:tp.usage||"",wrongOptions:tp.wrongOptions||tp.wrong_options||[],fillBlank:tp.fillBlank||tp.fill_blank||null,fillAnswer:tp.fillAnswer||tp.fill_answer||null,rearrange:tp.rearrange||null};
       }
       const cardId=resolved.id||resolved.card_id||cid;
       const st=allStats[cardId]||allStats[String(cardId)]||allStats[resolved.id]||allStats[resolved.card_id];
       const m=st?st.mastery:0;
-      const exType=exerciseForMastery(m);
-      return{card:resolved,exType,card_id:cid};
+      const[easy,hard]=pairs(m);
+      result.push({card:resolved,exType:easy,card_id:cid});
+      result.push({card:resolved,exType:hard,card_id:cid});
     });
+    return result;
   });
 
   const[stage,setStage]=useState("read"); // read, comp, highlight, exercises
