@@ -1021,33 +1021,131 @@ function GenericQuiz({options,correct,onResult}){
 /* ═══════════════════════════════════════════════
    LISTENING SCREEN
    ═══════════════════════════════════════════════ */
+/* ─── Background Noise Engine (Web Audio API) ─── */
+const NOISE_PROFILES={
+  cafe:{bandHz:800,Q:0.5,modHz:0.3,label:"Cafe"},
+  office:{bandHz:1200,Q:0.8,modHz:0.15,label:"Office"},
+  street:{bandHz:400,Q:0.3,modHz:0.6,label:"Street"}
+};
+
+function useBackgroundNoise(){
+  const ctxRef=useRef(null);
+  const nodesRef=useRef(null);
+
+  const start=useCallback((profile="cafe",volume=0.17)=>{
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return;
+      const ctx=new AC();ctxRef.current=ctx;
+      const p=NOISE_PROFILES[profile]||NOISE_PROFILES.cafe;
+
+      // White noise buffer
+      const bufSize=ctx.sampleRate*2;
+      const buf=ctx.createBuffer(1,bufSize,ctx.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let i=0;i<bufSize;i++)d[i]=Math.random()*2-1;
+      const src=ctx.createBufferSource();
+      src.buffer=buf;src.loop=true;
+
+      // Bandpass filter for noise character
+      const band=ctx.createBiquadFilter();
+      band.type="bandpass";band.frequency.value=p.bandHz;band.Q.value=p.Q;
+
+      // LFO modulation for natural variation
+      const lfo=ctx.createOscillator();
+      const lfoGain=ctx.createGain();
+      lfo.frequency.value=p.modHz;lfo.type="sine";
+      lfoGain.gain.value=volume*0.3;
+
+      // Master gain
+      const gain=ctx.createGain();
+      gain.gain.value=volume;
+
+      // Connect: noise → bandpass → gain → output
+      src.connect(band);band.connect(gain);
+      lfo.connect(lfoGain);lfoGain.connect(gain.gain);
+      gain.connect(ctx.destination);
+
+      src.start();lfo.start();
+      nodesRef.current={src,lfo,gain,ctx};
+    }catch(e){}
+  },[]);
+
+  const stop=useCallback(()=>{
+    if(nodesRef.current){
+      try{
+        nodesRef.current.src.stop();
+        nodesRef.current.lfo.stop();
+        nodesRef.current.ctx.close();
+      }catch(e){}
+      nodesRef.current=null;
+    }
+    ctxRef.current=null;
+  },[]);
+
+  // Cleanup on unmount
+  useEffect(()=>()=>stop(),[stop]);
+
+  return{start,stop};
+}
+
+function RealWorldToggle({enabled,onToggle,noiseType,onNoiseType}){
+  return <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+    <button onClick={onToggle} style={{
+      background:enabled?"#3D405B":T.card,color:enabled?"#fff":T.muted,
+      border:`1.5px solid ${enabled?T.navy:T.border}`,borderRadius:20,
+      padding:"6px 14px",cursor:"pointer",fontFamily:Fb,fontSize:12,fontWeight:600,
+      transition:"all .2s",display:"flex",alignItems:"center",gap:5
+    }}>{enabled?"🔊 Real World":"🔇 Clean"}</button>
+    {enabled&&<div style={{display:"flex",gap:4}}>
+      {Object.entries(NOISE_PROFILES).map(([k,v])=><button key={k} onClick={()=>onNoiseType(k)} style={{
+        background:noiseType===k?T.tealSoft:T.card,color:noiseType===k?T.teal:T.muted,
+        border:`1px solid ${noiseType===k?T.teal:T.border}`,borderRadius:14,
+        padding:"3px 10px",cursor:"pointer",fontFamily:Fb,fontSize:11,fontWeight:600,
+        transition:"all .2s"
+      }}>{v.label}</button>)}
+    </div>}
+  </div>;
+}
+
 function ListeningScreen({exercise,onComplete}){
   const exData=exercise.data||exercise;
   const exType=exercise.exercise_type||exercise.type||"dictation";
   const exId=exercise.exercise_id||exercise.id||"";
 
-  // TTS helpers
+  // Real World Mode state
+  const[realWorld,setRealWorld]=useState(false);
+  const[noiseType,setNoiseType]=useState("cafe");
+  const noise=useBackgroundNoise();
+
+  // TTS helpers — starts/stops noise around speech
   const speak=(text,rate=1.0)=>{
     if(!window.speechSynthesis)return;
     window.speechSynthesis.cancel();
+    noise.stop();
     const u=new SpeechSynthesisUtterance(text);
     u.rate=rate;u.lang="en-US";
     const voices=window.speechSynthesis.getVoices();
     const enVoice=voices.find(v=>v.lang.startsWith("en"));
     if(enVoice)u.voice=enVoice;
+    if(realWorld)noise.start(noiseType,0.17);
+    u.onend=()=>noise.stop();
+    u.onerror=()=>noise.stop();
     window.speechSynthesis.speak(u);
   };
 
-  // Ensure voices are loaded
+  // Ensure voices are loaded; cleanup on unmount
   useEffect(()=>{
     if(window.speechSynthesis){window.speechSynthesis.getVoices()}
-    return ()=>{if(window.speechSynthesis)window.speechSynthesis.cancel()};
+    return ()=>{if(window.speechSynthesis)window.speechSynthesis.cancel();noise.stop()};
   },[]);
 
-  if(exType==="dictation")return <DictationEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
-  if(exType==="listen_comprehension")return <ListenCompEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
-  if(exType==="connected_speech")return <ConnectedSpeechEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
-  if(exType==="speed_drill")return <SpeedDrillEx data={exData} exId={exId} speak={speak} onComplete={onComplete}/>;
+  const rwToggle=<RealWorldToggle enabled={realWorld} onToggle={()=>setRealWorld(r=>!r)} noiseType={noiseType} onNoiseType={setNoiseType}/>;
+
+  if(exType==="dictation")return <DictationEx data={exData} exId={exId} speak={speak} onComplete={onComplete} rwToggle={rwToggle}/>;
+  if(exType==="listen_comprehension")return <ListenCompEx data={exData} exId={exId} speak={speak} onComplete={onComplete} rwToggle={rwToggle}/>;
+  if(exType==="connected_speech")return <ConnectedSpeechEx data={exData} exId={exId} speak={speak} onComplete={onComplete} rwToggle={rwToggle}/>;
+  if(exType==="speed_drill")return <SpeedDrillEx data={exData} exId={exId} speak={speak} onComplete={onComplete} rwToggle={rwToggle}/>;
   return <div style={{padding:24}}><p>Unknown listening exercise type: {exType}</p><Btn onClick={()=>onComplete(false)}>Skip</Btn></div>;
 }
 
@@ -1073,7 +1171,7 @@ function PlayBtn({onClick,label="Play",size="normal"}){
   </button>;
 }
 
-function DictationEx({data,exId,speak,onComplete}){
+function DictationEx({data,exId,speak,onComplete,rwToggle}){
   const text=data.text||"";
   const[input,setInput]=useState("");
   const[submitted,setSubmitted]=useState(false);
@@ -1126,6 +1224,7 @@ function DictationEx({data,exId,speak,onComplete}){
         <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
           <RotateCcw size={14}/>Listen again
         </button>
+        {rwToggle}
       </div>
     </FadeIn>
     {!submitted&&<FadeIn delay={300}>
@@ -1159,7 +1258,7 @@ function DictationEx({data,exId,speak,onComplete}){
   </div>;
 }
 
-function ListenCompEx({data,exId,speak,onComplete}){
+function ListenCompEx({data,exId,speak,onComplete,rwToggle}){
   const text=data.text||"";
   const questions=data.questions||[];
   const[stage,setStage]=useState("listen"); // listen, questions, reveal
@@ -1202,6 +1301,7 @@ function ListenCompEx({data,exId,speak,onComplete}){
           <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
             <RotateCcw size={14}/>Replay
           </button>
+          {rwToggle}
         </div>
       </FadeIn>
       <FadeIn delay={400}>
@@ -1267,7 +1367,7 @@ function ListenCompEx({data,exId,speak,onComplete}){
   </div>;
 }
 
-function ConnectedSpeechEx({data,exId,speak,onComplete}){
+function ConnectedSpeechEx({data,exId,speak,onComplete,rwToggle}){
   const reduced=data.reduced||"";
   const full=data.full||"";
   const sentence=data.sentence||"";
@@ -1302,6 +1402,7 @@ function ConnectedSpeechEx({data,exId,speak,onComplete}){
         <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
           <RotateCcw size={14}/>Listen again
         </button>
+        {rwToggle}
       </div>
     </FadeIn>
     <FadeIn delay={300}>
@@ -1328,7 +1429,7 @@ function ConnectedSpeechEx({data,exId,speak,onComplete}){
   </div>;
 }
 
-function SpeedDrillEx({data,exId,speak,onComplete}){
+function SpeedDrillEx({data,exId,speak,onComplete,rwToggle}){
   const text=data.text||"";
   const speeds=data.speeds||[0.75,1.0,1.25];
   const questions=data.questions||[];
@@ -1381,6 +1482,7 @@ function SpeedDrillEx({data,exId,speak,onComplete}){
         <button onClick={play} style={{background:"none",border:"none",fontFamily:Fb,fontSize:13,color:T.teal,cursor:"pointer",fontWeight:500,display:"flex",alignItems:"center",gap:5}}>
           <RotateCcw size={14}/>Replay at {curSpeed}x
         </button>
+        {rwToggle}
       </div>
     </FadeIn>
     {played&&!show&&q&&<FadeIn>
