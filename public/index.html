@@ -678,7 +678,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Cards (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"id":"c1","phrase":"...","meaning":"..."}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadCards} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{cards.length} Cards</h3>
@@ -698,7 +698,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Passages (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"passage_id":"p1","level":"B1","title":"...","data":{...}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadPassages} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{passages.length} Passages</h3>
@@ -717,7 +717,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Exercises (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"card_id":1,"exercise_type":"fill_blank","exercise_id":"e1","data":{...}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadExercises} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{exercises.length} Exercises</h3>
@@ -734,7 +734,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Listening Exercises (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"exercise_id":"l1","level":"B1","exercise_type":"dictation","data":{"text":"..."}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadListening} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{listening.length} Listening Exercises</h3>
@@ -753,7 +753,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Writing Prompts (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"prompt_id":"w1","level":"B1","prompt_type":"email_completion","data":{"situation":"...","starter":"..."}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadWriting} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{writing.length} Writing Prompts</h3>
@@ -772,7 +772,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Scenarios (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"scenario_id":"s1","level":"B1","title":"...","data":{"situation":"...","ai_role":"...","starter_message":"..."}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadScenarios} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{scenarios.length} Scenarios</h3>
@@ -791,7 +791,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Grammar Lessons (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"lesson_id":"g1","level":"B1","title":"The experience tense","grammar_point":"present_perfect","data":{"examples":[...],"pattern_question":"...","pattern_options":[...],"pattern_correct":0,"pattern_explanation":"...","exercises":[...],"production":[...],"exceptions":[...]}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadGrammar} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{grammar.length} Grammar Lessons</h3>
@@ -810,7 +810,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Subtext Exercises (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"exercise_id":"sub1","level":"B1","category":"polite_disagreement","data":{"scenario":"Your colleague says:","phrase":"That\'s an interesting approach.","tone":"(with a polite smile)","setting":"Team meeting","options":[...],"correct":1,"explanation":"..."}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadSubtext} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{subtext.length} Subtext Exercises</h3>
@@ -829,7 +829,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Register Exercises (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"exercise_id":"reg1","level":"B1","exercise_type":"three_ways","data":{...}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadRegister} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{register.length} Register Exercises</h3>
@@ -848,7 +848,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Slang Exercises (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"exercise_id":"sl1","level":"B1","data":{"phrase":"no cap","generation":"Gen Z","context":"That movie was fire, no cap","options":["seriously","joking","maybe","lying"],"correct":0,"explanation":"...","when_to_use":"...","when_not_to_use":"..."}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadSlang} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{slang.length} Slang Exercises</h3>
@@ -867,7 +867,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Humor / Sarcasm Exercises (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"exercise_id":"sa1","level":"B2","exercise_type":"sincere_or_sarcastic","data":{"sentence":"Oh great, another meeting.","context":"After 3 hours of meetings...","correct":"sarcastic","cues":["flat tone","contradiction"],"explanation":"..."}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadSarcasm} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{sarcasm.length} Humor Exercises</h3>
@@ -886,7 +886,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Assessment Questions (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"question_id":"aq1","skill":"vocabulary","level":"B1","data":{"stem":"...","context":"...","options":[...],"correct":0}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadAssessments} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{assessments.length} Assessment Questions</h3>
@@ -905,7 +905,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload Connected Speech Lessons (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"lesson_id":"cs1","level":"B1","lesson_type":"lesson","data":{"forms":[{"reduced":"gonna","full":"going to","example":"I\'m gonna leave now."}],"drill_sentences":[...],"speed_passage":{...}}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadConnSpeech} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{connSpeech.length} Connected Speech Lessons</h3>
@@ -924,7 +924,7 @@ function AdminPanel({onBack}){
       <div style={{background:T.card,borderRadius:16,padding:20,boxShadow:T.shadow,marginBottom:20}}>
         <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>Upload TOEFL Sections (JSON)</h3>
         <div style={{marginBottom:10}}><FilePickBtn/></div>
-        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder='[{"section_id":"tr1","section_type":"reading","data":{"title":"...","passage":"...","time_minutes":20,"questions":[...]}}]' style={inputStyle}/>
+        <textarea value={jsonInput} onChange={e=>setJsonInput(e.target.value)} placeholder="Paste JSON array here..." style={inputStyle}/>
         <div style={{marginTop:12}}><Btn onClick={uploadToefl} disabled={!jsonInput.trim()} style={{maxWidth:200}}>Upload</Btn></div>
       </div>
       <h3 style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 12px"}}>{toefl.length} TOEFL Sections</h3>
