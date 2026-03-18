@@ -3442,7 +3442,7 @@ function AssessmentScreen({onComplete,onBack,lastAssessmentScores}){
       </FadeIn>
       {lastDate&&<FadeIn delay={300}><div style={{background:T.navySoft,borderRadius:12,padding:14,marginBottom:20}}>
         <p style={{fontFamily:Fb,fontSize:13,color:T.navy,margin:0}}>Last assessment: {new Date(lastDate).toLocaleDateString()}</p>
-      </FadeIn></FadeIn>}
+      </div></FadeIn>}
       {error&&<p style={{fontFamily:Fb,fontSize:13,color:"#C0392B",margin:"0 0 12px"}}>{error}</p>}
       <FadeIn delay={350}>
         <Btn onClick={startAssessment} disabled={loading}>{loading?"Preparing questions...":"Start Assessment"}</Btn>
