@@ -5398,46 +5398,134 @@ function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
     const isLast=mcqIdx>=mcqList.length-1;
     const showSummary=mcqIdx>=mcqList.length; // after last question answered
 
-    // Score summary screen
+    // Evaluation / score summary screen
     if(showSummary){
       const correct=mcqResults.filter(r=>r.correct).length;
       const total=mcqResults.length;
       const pct=Math.round((correct/total)*100);
-      const summaryColor=pct>=80?T.ok:pct>=50?T.accent:"#E74C3C";
+      const summaryColor=correct>=5?T.ok:correct>=4?T.accent:"#E74C3C";
+      const lowScore=correct<=3;
+
+      // Category breakdown
+      const cats=[
+        {key:"reading_comprehension",label:"Reading Comprehension",icon:"\u{1F4D6}",color:T.accent},
+        {key:"lecture_comprehension",label:"Lecture Comprehension",icon:"\u{1F3A7}",color:T.navy},
+        {key:"contradiction",label:"Identifying Contradictions",icon:"\u{1F504}",color:"#6B5B95"}
+      ];
+      const catScores={};
+      mcqResults.forEach((r,i)=>{
+        const t=mcqList[i]?.question_type||"unknown";
+        if(!catScores[t])catScores[t]={correct:0,total:0};
+        catScores[t].total++;
+        if(r.correct)catScores[t].correct++;
+      });
+      const weakCats=cats.filter(c=>{const s=catScores[c.key];return s&&s.correct<s.total});
+
+      // Diagnostic message
+      let diagnostic="";
+      if(weakCats.length===0){
+        diagnostic="Great job! You understood both sides and the contradictions. Ready to move on.";
+      }else{
+        const msgs=[];
+        if(catScores.reading_comprehension&&catScores.reading_comprehension.correct<catScores.reading_comprehension.total)
+          msgs.push("Review the reading passage more carefully. Focus on identifying the 3 supporting points.");
+        if(catScores.lecture_comprehension&&catScores.lecture_comprehension.correct<catScores.lecture_comprehension.total)
+          msgs.push("Listen to the lecture again. Pay attention to the specific evidence the professor uses.");
+        if(catScores.contradiction&&catScores.contradiction.correct<catScores.contradiction.total)
+          msgs.push("You understood both texts individually, but practice connecting them. Ask yourself: what exactly does the professor say that weakens each reading point?");
+        diagnostic=msgs.join(" ");
+      }
+
+      const handleReview=()=>{
+        // Reset state and go back to reading
+        setLectureStarted(false);setLectureDone(false);setLecturePlaying(false);
+        setMcqIdx(0);setMcqSelected(null);setMcqRevealed(false);setMcqResults([]);
+        setTimeLeft(d.reading_time_seconds||180);
+        setStep("reading");
+      };
+
       return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
         <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:16}}>{"\u{2705}"}</span>
-          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Comprehension Check Complete</span>
+          <span style={{fontSize:16}}>{"\u{1F4CA}"}</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Comprehension Results</span>
         </div>
-        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:30}}>
+        <div style={{flex:1,padding:20,overflowY:"auto"}}>
           <FadeIn>
-            <div style={{textAlign:"center",maxWidth:400}}>
-              <div style={{width:90,height:90,borderRadius:45,background:`conic-gradient(${summaryColor} ${pct}%, ${T.bg} 0)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
-                <div style={{width:70,height:70,borderRadius:35,background:T.card,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
-                  <span style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:summaryColor}}>{correct}/{total}</span>
+            {/* Overall score */}
+            <div style={{textAlign:"center",marginBottom:24}}>
+              <div style={{width:96,height:96,borderRadius:48,background:`conic-gradient(${summaryColor} ${pct}%, ${T.bg} 0)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+                <div style={{width:74,height:74,borderRadius:37,background:T.card,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
+                  <span style={{fontFamily:Fd,fontSize:28,fontWeight:700,color:summaryColor}}>{correct}/{total}</span>
                 </div>
               </div>
-              <h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"0 0 8px"}}>
-                {pct>=80?"Great comprehension!":pct>=50?"Decent understanding":"Review the material"}
+              <h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"0 0 4px"}}>
+                {correct===total?"Perfect Score!":correct>=5?"Excellent!":correct>=4?"Good Understanding":correct>=3?"Fair":"Needs Review"}
               </h3>
-              <p style={{fontFamily:Fb,fontSize:14,color:T.muted,lineHeight:1.5,margin:"0 0 20px"}}>
-                You got {correct} out of {total} questions correct. {pct>=50?"You're ready to write your essay.":"Try to use what you learned in your essay."}
-              </p>
-              {/* Per-question recap */}
-              <div style={{display:"flex",flexDirection:"column",gap:6,textAlign:"left"}}>
-                {mcqResults.map((r,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:r.correct?`${T.ok}08`:"#E74C3C08",borderRadius:8}}>
-                  <div style={{width:20,height:20,borderRadius:10,background:r.correct?`${T.ok}18`:"#E74C3C18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    {r.correct?<Check size={10} color={T.ok}/>:<span style={{fontFamily:Fb,fontSize:11,fontWeight:700,color:"#E74C3C"}}>{"\u2717"}</span>}
+            </div>
+
+            {/* Category breakdown */}
+            <div style={{background:T.card,borderRadius:16,boxShadow:T.shadow,overflow:"hidden",marginBottom:16}}>
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`}}>
+                <p style={{fontFamily:Fb,fontSize:12,fontWeight:700,color:T.muted,margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Breakdown by Category</p>
+              </div>
+              {cats.map((cat,ci)=>{
+                const s=catScores[cat.key]||{correct:0,total:0};
+                const allRight=s.total>0&&s.correct===s.total;
+                return <div key={cat.key} style={{padding:"14px 18px",borderBottom:ci<cats.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:`${cat.color}12`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{cat.icon}</div>
+                  <div style={{flex:1}}>
+                    <p style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text,margin:0}}>{cat.label}</p>
                   </div>
-                  <span style={{fontFamily:Fb,fontSize:12,color:T.text,flex:1}}>Q{i+1}: {mcqList[i]?.question_type==="reading_comprehension"?"Reading":mcqList[i]?.question_type==="lecture_comprehension"?"Lecture":"Contradiction"}</span>
-                  <span style={{fontFamily:Fb,fontSize:11,color:r.correct?T.ok:"#E74C3C",fontWeight:600}}>{r.correct?"Correct":"Incorrect"}</span>
-                </div>)}
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:allRight?T.ok:s.correct>0?T.accent:"#E74C3C"}}>{s.correct}</span>
+                    <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>/ {s.total}</span>
+                    {allRight&&<Check size={14} color={T.ok}/>}
+                  </div>
+                </div>;
+              })}
+            </div>
+
+            {/* Diagnostic message */}
+            <div style={{background:lowScore?"#FFF8E1":`${T.ok}08`,border:`1.5px solid ${lowScore?"#FFE082":`${T.ok}25`}`,borderRadius:14,padding:"16px 18px",marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{lowScore?"\u{1F4A1}":"\u{2705}"}</span>
+                <div>
+                  <p style={{fontFamily:Fb,fontSize:13,fontWeight:700,color:lowScore?"#B8860B":T.ok,margin:"0 0 4px"}}>{lowScore?"We recommend reviewing the material":"You're ready to write!"}</p>
+                  <p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0,lineHeight:1.6}}>{diagnostic}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Per-question recap */}
+            <div style={{background:T.card,borderRadius:16,boxShadow:T.shadow,overflow:"hidden"}}>
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${T.border}`}}>
+                <p style={{fontFamily:Fb,fontSize:12,fontWeight:700,color:T.muted,margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Question Details</p>
+              </div>
+              <div style={{padding:"10px 18px"}}>
+                {mcqResults.map((r,i)=>{
+                  const qt=mcqList[i]?.question_type;
+                  const catInfo=cats.find(c=>c.key===qt)||cats[2];
+                  return <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<mcqResults.length-1?`1px solid ${T.border}08`:"none"}}>
+                    <div style={{width:22,height:22,borderRadius:11,background:r.correct?`${T.ok}15`:"#E74C3C15",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {r.correct?<Check size={10} color={T.ok}/>:<span style={{fontFamily:Fb,fontSize:11,fontWeight:700,color:"#E74C3C"}}>{"\u2717"}</span>}
+                    </div>
+                    <span style={{fontFamily:Fb,fontSize:12,color:T.text,flex:1}}>Q{i+1}</span>
+                    <span style={{fontFamily:Fb,fontSize:10,fontWeight:700,color:catInfo.color,background:`${catInfo.color}10`,borderRadius:5,padding:"2px 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>
+                      {qt==="reading_comprehension"?"Reading":qt==="lecture_comprehension"?"Lecture":"Contradiction"}
+                    </span>
+                  </div>;
+                })}
               </div>
             </div>
           </FadeIn>
         </div>
-        <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px"}}>
-          <Btn onClick={advanceToWriting} style={{width:"100%"}}>Start Writing Essay</Btn>
+        <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+          <Btn v="secondary" onClick={handleReview} style={{flex:1}}>
+            <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><RotateCcw size={14}/>Review Material</span>
+          </Btn>
+          <Btn onClick={advanceToWriting} style={{flex:1}}>
+            <span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>Continue<ArrowRight size={14}/></span>
+          </Btn>
         </div>
       </div>;
     }
