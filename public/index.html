@@ -5118,8 +5118,8 @@ const TOEFL_SECTIONS=[
   {type:"listening",label:"Listening",icon:"\u{1F3A7}",color:T.navy,time:15,maxScore:30,desc:"Listen to audio and answer questions"},
   {type:"writing",label:"Writing",icon:"\u{270D}\uFE0F",color:T.purple,time:20,maxScore:30,desc:"Write responses to prompts"},
   {type:"speaking",label:"Speaking",icon:"\u{1F399}\uFE0F",color:T.teal,time:15,maxScore:30,desc:"Respond to speaking prompts (text-based)"},
-  {type:"integrated_writing",label:"Integrated Writing",icon:"\u{1F4DD}",color:"#6B5B95",time:23,maxScore:30,desc:"Read + Listen + Write essay (TOEFL Task 1)",integrated:true},
-  {type:"integrated_speaking",label:"Integrated Speaking",icon:"\u{1F3A4}",color:"#2A9D8F",time:3,maxScore:30,desc:"Read + Listen + Speak response (TOEFL Task)",integrated:true}
+  {type:"integrated_writing",label:"Integrated Writing",icon:"\u{1F4DD}",color:"#6B5B95",time:23,maxScore:5,desc:"Read + Listen + Write essay (TOEFL Task 1)",integrated:true},
+  {type:"integrated_speaking",label:"Integrated Speaking",icon:"\u{1F3A4}",color:"#2A9D8F",time:3,maxScore:5,desc:"Read + Listen + Speak response (TOEFL Task)",integrated:true}
 ];
 
 const TOEFL_BENCHMARKS={
@@ -5127,8 +5127,8 @@ const TOEFL_BENCHMARKS={
   listening:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:21,cefr:"B2",label:"B2 — Independent"},{min:22,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
   writing:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
   speaking:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
-  integrated_writing:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
-  integrated_speaking:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}]
+  integrated_writing:[{min:0,max:1,cefr:"A2",label:"A2 — Beginner"},{min:2,max:2,cefr:"B1",label:"B1 — Basic"},{min:3,max:3,cefr:"B2",label:"B2 — Independent"},{min:4,max:4,cefr:"C1",label:"C1 — Advanced"},{min:5,max:5,cefr:"C2",label:"C2 — Proficient"}],
+  integrated_speaking:[{min:0,max:1,cefr:"A2",label:"A2 — Beginner"},{min:2,max:2,cefr:"B1",label:"B1 — Basic"},{min:3,max:3,cefr:"B2",label:"B2 — Independent"},{min:4,max:4,cefr:"C1",label:"C1 — Advanced"},{min:5,max:5,cefr:"C2",label:"C2 — Proficient"}]
 };
 
 function getBenchmark(type,score){
@@ -5157,6 +5157,7 @@ function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
   const[lectureStarted,setLectureStarted]=useState(false);
   const[lectureDone,setLectureDone]=useState(false);
   const[submitting,setSubmitting]=useState(false);
+  const[gradeResult,setGradeResult]=useState(null);
   const[startTime]=useState(Date.now());
   const timerRef=useRef(null);
   const synthRef=useRef(null);
@@ -5213,11 +5214,24 @@ function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
     const elapsed=Math.round((Date.now()-startTime)/1000);
     const sId=sectionData.section_id||"unknown";
     const serverResult=await apiSubmitToeflIntegrated(sId,essayText,elapsed);
-    const score=serverResult?.score??0;
-    const bm=getBenchmark("integrated_writing",score);
-    onSubmit({section_type:"integrated_writing",score,max_score:30,benchmark:bm,correct:null,total:null,
-      feedback:serverResult?.details?.status==="pending_evaluation"?{status:"pending_evaluation",message:"Your essay has been submitted. AI evaluation coming soon."}:serverResult?.details,
-      word_count:essayWc});
+    setSubmitting(false);
+    const details=serverResult?.details||{};
+    if(details.status==="evaluated"){
+      setGradeResult({score:details.score||0,max_score:serverResult?.max_score||5,feedback:details.feedback,point_analysis:details.point_analysis||[],improved_sentences:details.improved_sentences||[],word_count:details.word_count||essayWc});
+    }else{
+      // Fallback if no API key or error
+      const score=serverResult?.score??0;
+      const bm=getBenchmark("integrated_writing",score);
+      onSubmit({section_type:"integrated_writing",score,max_score:serverResult?.max_score||5,benchmark:bm,correct:null,total:null,
+        feedback:details.status==="pending_evaluation"?{status:"pending_evaluation",message:"Your essay has been submitted. AI evaluation coming soon."}:details,
+        word_count:essayWc});
+    }
+  };
+
+  const finishWithGrade=()=>{
+    if(!gradeResult)return;
+    const bm=getBenchmark("integrated_writing",gradeResult.score);
+    onSubmit({section_type:"integrated_writing",score:gradeResult.score,max_score:gradeResult.max_score,benchmark:bm,correct:null,total:null,feedback:gradeResult,word_count:gradeResult.word_count});
   };
 
   const timerColor=timeLeft<=60?"#E74C3C":timeLeft<=300?"#F2CC8F":T.text;
@@ -5292,39 +5306,98 @@ function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
 
   // ─── WRITING STEP ───
   if(step==="writing"){
+    const scoreColor=gradeResult?gradeResult.score>=4?T.ok:gradeResult.score>=3?T.accent:"#E74C3C":T.muted;
+    const scoreLabels=["Off-topic","Major issues","Needs improvement","Adequate","Good","Excellent"];
     return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
       <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:16}}>{"\u{270D}\uFE0F"}</span>
-          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Step 3: Write Your Essay</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>{gradeResult?"Essay Results":"Step 3: Write Your Essay"}</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
+        {!gradeResult&&<div style={{display:"flex",alignItems:"center",gap:6}}>
           <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={timerColor} strokeWidth={2}><circle cx={12} cy={12} r={10}/><polyline points="12 6 12 12 16 14"/></svg>
           <span style={{fontFamily:Fb,fontSize:16,fontWeight:700,color:timerColor,fontVariantNumeric:"tabular-nums"}}>{fmtTime(timeLeft)}</span>
-        </div>
+        </div>}
       </div>
       <div style={{flex:1,padding:20,display:"flex",gap:16}}>
-        {/* Sidebar: reading passage returns */}
+        {/* Sidebar: reading passage */}
         <div style={{width:"38%",flexShrink:0,background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,maxHeight:"calc(100vh - 160px)",overflowY:"auto"}}>
           <p style={{fontFamily:Fb,fontSize:11,fontWeight:600,color:T.muted,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Reading Passage</p>
           <p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{d.reading_passage||""}</p>
         </div>
-        {/* Writing area */}
-        <div style={{flex:1,display:"flex",flexDirection:"column",gap:12}}>
+        {/* Writing area + results */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:"calc(100vh - 120px)"}}>
           <div style={{background:T.card,borderRadius:14,padding:14,boxShadow:T.shadow}}>
             <p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 4px",textTransform:"uppercase"}}>Prompt</p>
             <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.5}}>{d.writing_prompt||"Summarize the points made in the lecture, explaining how they relate to the reading passage."}</p>
           </div>
-          <textarea value={essayText} onChange={e=>{setEssayText(e.target.value);setEssayWc(e.target.value.trim()?e.target.value.trim().split(/\s+/).length:0)}} placeholder="Type your essay here..." style={{
-            flex:1,minHeight:250,padding:16,borderRadius:14,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:15,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.7
-          }} onFocus={e=>e.target.style.borderColor="#6B5B95"} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <textarea value={essayText} onChange={e=>{if(!gradeResult){setEssayText(e.target.value);setEssayWc(e.target.value.trim()?e.target.value.trim().split(/\s+/).length:0)}}} readOnly={!!gradeResult} placeholder="Type your essay here..." style={{
+            flex:gradeResult?0:1,minHeight:gradeResult?120:250,padding:16,borderRadius:14,border:`1.5px solid ${gradeResult?"#6B5B9540":T.border}`,fontFamily:Fb,fontSize:gradeResult?13:15,color:T.text,background:gradeResult?`${T.bg}`:`${T.card}`,outline:"none",boxSizing:"border-box",resize:gradeResult?"none":"vertical",lineHeight:1.7,opacity:gradeResult?0.8:1
+          }}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontFamily:Fb,fontSize:12,color:essayWc>=150?T.ok:T.muted,fontWeight:600}}>{essayWc} words {essayWc<150&&<span style={{color:T.muted,fontWeight:400}}>(aim for 150-225)</span>}</span>
+            <span style={{fontFamily:Fb,fontSize:12,color:essayWc>=150?T.ok:T.muted,fontWeight:600}}>{essayWc} words {!gradeResult&&essayWc<150&&<span style={{color:T.muted,fontWeight:400}}>(aim for 150-225)</span>}</span>
           </div>
+
+          {/* Grading spinner */}
+          {submitting&&<FadeIn>
+            <div style={{background:T.card,borderRadius:16,padding:28,boxShadow:T.shadow,textAlign:"center"}}>
+              <div style={{width:36,height:36,border:`3px solid ${T.border}`,borderTopColor:"#6B5B95",borderRadius:"50%",animation:"spin 1s linear infinite",margin:"0 auto 14px"}}/>
+              <p style={{fontFamily:Fb,fontSize:15,fontWeight:600,color:T.text,margin:"0 0 4px"}}>Grading your essay...</p>
+              <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:0}}>AI is evaluating your response against the TOEFL rubric</p>
+            </div>
+          </FadeIn>}
+
+          {/* Score card */}
+          {gradeResult&&<FadeIn>
+            <div style={{background:T.card,borderRadius:16,boxShadow:"0 4px 20px rgba(0,0,0,.08)",overflow:"hidden"}}>
+              {/* Score header */}
+              <div style={{background:`linear-gradient(135deg,${scoreColor}18,${scoreColor}08)`,padding:"20px 20px 16px",borderBottom:`1px solid ${scoreColor}20`}}>
+                <div style={{display:"flex",alignItems:"center",gap:16}}>
+                  <div style={{width:64,height:64,borderRadius:32,background:`conic-gradient(${scoreColor} ${(gradeResult.score/5)*100}%, ${T.bg} 0)`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <div style={{width:50,height:50,borderRadius:25,background:T.card,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
+                      <span style={{fontFamily:Fd,fontSize:24,fontWeight:700,color:scoreColor}}>{gradeResult.score}</span>
+                      <span style={{fontFamily:Fb,fontSize:9,color:T.muted}}>/ 5</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p style={{fontFamily:Fd,fontSize:18,fontWeight:700,color:T.text,margin:"0 0 2px"}}>{scoreLabels[gradeResult.score]||"Scored"}</p>
+                    <p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:0,lineHeight:1.5}}>{gradeResult.feedback}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Point analysis */}
+              <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`}}>
+                <p style={{fontFamily:Fb,fontSize:12,fontWeight:700,color:T.muted,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Lecture Point Coverage</p>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {(gradeResult.point_analysis||[]).map((pt,i)=><div key={i} style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                    <div style={{width:22,height:22,borderRadius:11,background:pt.covered?`${T.ok}18`:"#E74C3C18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>
+                      {pt.covered?<Check size={12} color={T.ok}/>:<span style={{fontFamily:Fb,fontSize:12,fontWeight:700,color:"#E74C3C"}}>&#x2717;</span>}
+                    </div>
+                    <div>
+                      <span style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:pt.covered?T.ok:"#E74C3C"}}>Point {pt.point||i+1}: {pt.covered?"Covered":"Missing"}</span>
+                      <p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:"2px 0 0",lineHeight:1.5}}>{pt.comment}</p>
+                    </div>
+                  </div>)}
+                </div>
+              </div>
+
+              {/* Improved sentences */}
+              {gradeResult.improved_sentences&&gradeResult.improved_sentences.length>0&&<div style={{padding:"16px 20px"}}>
+                <p style={{fontFamily:Fb,fontSize:12,fontWeight:700,color:T.muted,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Suggested Rewrites</p>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {gradeResult.improved_sentences.map((s,i)=><div key={i} style={{background:`${T.purple}08`,border:`1px solid ${T.purple}15`,borderRadius:10,padding:"10px 14px"}}>
+                    <p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0,lineHeight:1.6,fontStyle:"italic"}}>{s}</p>
+                  </div>)}
+                </div>
+              </div>}
+            </div>
+          </FadeIn>}
         </div>
       </div>
       <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
-        <Btn onClick={handleSubmit} disabled={submitting||!essayText.trim()} style={{flex:1}}>{submitting?"Submitting...":"Submit Essay"}</Btn>
+        {!gradeResult&&<Btn onClick={handleSubmit} disabled={submitting||!essayText.trim()} style={{flex:1}}>{submitting?"Grading...":"Submit Essay"}</Btn>}
+        {gradeResult&&<Btn onClick={finishWithGrade} style={{flex:1}}><span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>Continue<ArrowRight size={16}/></span></Btn>}
       </div>
     </div>;
   }
