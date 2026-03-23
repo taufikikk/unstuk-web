@@ -5117,20 +5117,394 @@ const TOEFL_SECTIONS=[
   {type:"reading",label:"Reading",icon:"\u{1F4D6}",color:T.accent,time:20,maxScore:30,desc:"Read passages and answer questions"},
   {type:"listening",label:"Listening",icon:"\u{1F3A7}",color:T.navy,time:15,maxScore:30,desc:"Listen to audio and answer questions"},
   {type:"writing",label:"Writing",icon:"\u{270D}\uFE0F",color:T.purple,time:20,maxScore:30,desc:"Write responses to prompts"},
-  {type:"speaking",label:"Speaking",icon:"\u{1F399}\uFE0F",color:T.teal,time:15,maxScore:30,desc:"Respond to speaking prompts (text-based)"}
+  {type:"speaking",label:"Speaking",icon:"\u{1F399}\uFE0F",color:T.teal,time:15,maxScore:30,desc:"Respond to speaking prompts (text-based)"},
+  {type:"integrated_writing",label:"Integrated Writing",icon:"\u{1F4DD}",color:"#6B5B95",time:23,maxScore:30,desc:"Read + Listen + Write essay (TOEFL Task 1)",integrated:true},
+  {type:"integrated_speaking",label:"Integrated Speaking",icon:"\u{1F3A4}",color:"#2A9D8F",time:3,maxScore:30,desc:"Read + Listen + Speak response (TOEFL Task)",integrated:true}
 ];
 
 const TOEFL_BENCHMARKS={
   reading:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:21,cefr:"B2",label:"B2 — Independent"},{min:22,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
   listening:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:21,cefr:"B2",label:"B2 — Independent"},{min:22,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
   writing:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
-  speaking:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}]
+  speaking:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
+  integrated_writing:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}],
+  integrated_speaking:[{min:0,max:14,cefr:"B1",label:"B1 — Basic"},{min:15,max:23,cefr:"B2",label:"B2 — Independent"},{min:24,max:27,cefr:"C1",label:"C1 — Advanced"},{min:28,max:30,cefr:"C2",label:"C2 — Proficient"}]
 };
 
 function getBenchmark(type,score){
   const bm=TOEFL_BENCHMARKS[type]||TOEFL_BENCHMARKS.reading;
   for(const b of bm)if(score>=b.min&&score<=b.max)return b;
   return bm[0];
+}
+
+async function apiSubmitToeflIntegrated(sectionId,userText,timeSpent){
+  const t=getToken();if(!t)return null;
+  const r=await fetch(window.API_URL+"/api/toefl/submit/"+sectionId,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({user_text:userText,time_spent_seconds:timeSpent,answers:[]})});
+  return r.ok?await r.json():null;
+}
+
+/* ═══════════════════════════════════════════════
+   INTEGRATED WRITING FLOW
+   Read (3min) → Listen (lecture) → Write (20min)
+   ═══════════════════════════════════════════════ */
+function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
+  const d=sectionData.data||sectionData;
+  const[step,setStep]=useState("reading"); // reading, lecture, writing, submitted
+  const[mode,setMode]=useState("strict"); // strict = auto-advance, practice = manual
+  const[timeLeft,setTimeLeft]=useState(d.reading_time_seconds||180);
+  const[essayText,setEssayText]=useState("");
+  const[essayWc,setEssayWc]=useState(0);
+  const[lectureStarted,setLectureStarted]=useState(false);
+  const[lectureDone,setLectureDone]=useState(false);
+  const[submitting,setSubmitting]=useState(false);
+  const[startTime]=useState(Date.now());
+  const timerRef=useRef(null);
+  const synthRef=useRef(null);
+
+  const fmtTime=(s)=>{const m=Math.floor(s/60);const sec=s%60;return`${m}:${sec<10?"0":""}${sec}`};
+
+  // Timer logic
+  useEffect(()=>{
+    if(step==="submitted")return;
+    if(step==="lecture")return; // no timer during lecture
+    clearInterval(timerRef.current);
+    timerRef.current=setInterval(()=>{
+      setTimeLeft(t=>{
+        if(t<=1){
+          clearInterval(timerRef.current);
+          if(step==="reading"&&mode==="strict"){setStep("lecture");return 0}
+          if(step==="writing"){handleSubmit();return 0}
+          return 0;
+        }
+        return t-1;
+      });
+    },1000);
+    return()=>clearInterval(timerRef.current);
+  },[step,mode]);
+
+  const advanceToLecture=()=>{clearInterval(timerRef.current);setStep("lecture")};
+
+  // Lecture playback via Web Speech API
+  useEffect(()=>{
+    if(step!=="lecture"||lectureStarted)return;
+    setLectureStarted(true);
+    const text=d.lecture_text||"";
+    if(!text||!window.speechSynthesis){setLectureDone(true);return}
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang="en-US";u.rate=0.95;
+    u.onend=()=>setLectureDone(true);
+    u.onerror=()=>setLectureDone(true);
+    synthRef.current=u;
+    window.speechSynthesis.speak(u);
+    return()=>window.speechSynthesis.cancel();
+  },[step,lectureStarted]);
+
+  const advanceToWriting=()=>{
+    window.speechSynthesis.cancel();
+    setTimeLeft(d.writing_time_seconds||1200);
+    setStep("writing");
+  };
+
+  const handleSubmit=async()=>{
+    clearInterval(timerRef.current);
+    window.speechSynthesis.cancel();
+    setSubmitting(true);
+    const elapsed=Math.round((Date.now()-startTime)/1000);
+    const sId=sectionData.section_id||"unknown";
+    const serverResult=await apiSubmitToeflIntegrated(sId,essayText,elapsed);
+    const score=serverResult?.score??0;
+    const bm=getBenchmark("integrated_writing",score);
+    onSubmit({section_type:"integrated_writing",score,max_score:30,benchmark:bm,correct:null,total:null,
+      feedback:serverResult?.details?.status==="pending_evaluation"?{status:"pending_evaluation",message:"Your essay has been submitted. AI evaluation coming soon."}:serverResult?.details,
+      word_count:essayWc});
+  };
+
+  const timerColor=timeLeft<=60?"#E74C3C":timeLeft<=300?"#F2CC8F":T.text;
+
+  // ─── READING STEP ───
+  if(step==="reading"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>{"\u{1F4D6}"}</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Step 1: Reading Passage</span>
+          <span style={{fontFamily:Fb,fontSize:11,color:T.muted,background:T.bg,borderRadius:6,padding:"2px 8px"}}>
+            {mode==="strict"?"Strict":"Practice"}
+          </span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={()=>setMode(m=>m==="strict"?"practice":"strict")} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontFamily:Fb,fontSize:11,color:T.muted}}>
+            {mode==="strict"?"Switch to Practice":"Switch to Strict"}
+          </button>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={timerColor} strokeWidth={2}><circle cx={12} cy={12} r={10}/><polyline points="12 6 12 12 16 14"/></svg>
+          <span style={{fontFamily:Fb,fontSize:16,fontWeight:700,color:timerColor,fontVariantNumeric:"tabular-nums"}}>{fmtTime(timeLeft)}</span>
+        </div>
+      </div>
+      <div style={{flex:1,padding:20}}>
+        <FadeIn>
+          <div style={{background:T.card,borderRadius:14,padding:20,boxShadow:T.shadow}}>
+            <p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{d.reading_title||"Academic Passage"}</p>
+            <p style={{fontFamily:Fb,fontSize:15,color:T.text,margin:0,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{d.reading_passage||""}</p>
+          </div>
+        </FadeIn>
+      </div>
+      <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        <Btn v="secondary" onClick={onBack} style={{flex:0}}>Cancel</Btn>
+        {mode==="practice"&&<Btn onClick={advanceToLecture} style={{flex:1}}>I'm Ready — Next Step</Btn>}
+        {mode==="strict"&&<p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"auto 0",textAlign:"center",flex:1}}>Auto-advancing when timer ends...</p>}
+      </div>
+    </div>;
+  }
+
+  // ─── LECTURE STEP ───
+  if(step==="lecture"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:16}}>{"\u{1F3A7}"}</span>
+        <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Step 2: Listen to Lecture</span>
+      </div>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:40}}>
+        <FadeIn>
+          <div style={{textAlign:"center",maxWidth:400}}>
+            <div style={{width:80,height:80,borderRadius:40,background:`linear-gradient(135deg,${T.navy},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 6px 24px rgba(61,64,91,.3)"}}>
+              {!lectureDone?<div style={{width:20,height:20,border:"3px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+              :<Check size={28} color="#fff"/>}
+            </div>
+            <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
+            <h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"0 0 8px"}}>{d.lecture_title||"Lecture"}</h3>
+            <p style={{fontFamily:Fb,fontSize:14,color:T.muted,lineHeight:1.5,margin:"0 0 6px"}}>
+              {!lectureDone?"Listen carefully. The reading passage will be hidden during the lecture. You can take notes if you wish."
+              :"Lecture complete. Proceed to the writing task."}
+            </p>
+            <p style={{fontFamily:Fb,fontSize:12,color:T.accent,fontStyle:"italic",margin:"8px 0 0"}}>
+              The reading passage is hidden during the lecture — just like the real TOEFL.
+            </p>
+          </div>
+        </FadeIn>
+      </div>
+      <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        {lectureDone&&<Btn onClick={advanceToWriting} style={{flex:1}}>Start Writing</Btn>}
+        {!lectureDone&&mode==="practice"&&<Btn v="secondary" onClick={advanceToWriting} style={{flex:1}}>Skip Lecture</Btn>}
+      </div>
+    </div>;
+  }
+
+  // ─── WRITING STEP ───
+  if(step==="writing"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>{"\u{270D}\uFE0F"}</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Step 3: Write Your Essay</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={timerColor} strokeWidth={2}><circle cx={12} cy={12} r={10}/><polyline points="12 6 12 12 16 14"/></svg>
+          <span style={{fontFamily:Fb,fontSize:16,fontWeight:700,color:timerColor,fontVariantNumeric:"tabular-nums"}}>{fmtTime(timeLeft)}</span>
+        </div>
+      </div>
+      <div style={{flex:1,padding:20,display:"flex",gap:16}}>
+        {/* Sidebar: reading passage returns */}
+        <div style={{width:"38%",flexShrink:0,background:T.card,borderRadius:14,padding:16,boxShadow:T.shadow,maxHeight:"calc(100vh - 160px)",overflowY:"auto"}}>
+          <p style={{fontFamily:Fb,fontSize:11,fontWeight:600,color:T.muted,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Reading Passage</p>
+          <p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{d.reading_passage||""}</p>
+        </div>
+        {/* Writing area */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:T.card,borderRadius:14,padding:14,boxShadow:T.shadow}}>
+            <p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 4px",textTransform:"uppercase"}}>Prompt</p>
+            <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.5}}>{d.writing_prompt||"Summarize the points made in the lecture, explaining how they relate to the reading passage."}</p>
+          </div>
+          <textarea value={essayText} onChange={e=>{setEssayText(e.target.value);setEssayWc(e.target.value.trim()?e.target.value.trim().split(/\s+/).length:0)}} placeholder="Type your essay here..." style={{
+            flex:1,minHeight:250,padding:16,borderRadius:14,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:15,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.7
+          }} onFocus={e=>e.target.style.borderColor="#6B5B95"} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontFamily:Fb,fontSize:12,color:essayWc>=150?T.ok:T.muted,fontWeight:600}}>{essayWc} words {essayWc<150&&<span style={{color:T.muted,fontWeight:400}}>(aim for 150-225)</span>}</span>
+          </div>
+        </div>
+      </div>
+      <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        <Btn onClick={handleSubmit} disabled={submitting||!essayText.trim()} style={{flex:1}}>{submitting?"Submitting...":"Submit Essay"}</Btn>
+      </div>
+    </div>;
+  }
+
+  // submitted state (shouldn't normally show — onSubmit transitions to report)
+  return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg}}>
+    <p style={{fontFamily:Fb,fontSize:14,color:T.muted}}>Submitting...</p>
+  </div>;
+}
+
+/* ═══════════════════════════════════════════════
+   INTEGRATED SPEAKING FLOW
+   Read (45s) → Listen (lecture) → Speak (60s)
+   ═══════════════════════════════════════════════ */
+function IntegratedSpeakingFlow({sectionData,onSubmit,onBack}){
+  const d=sectionData.data||sectionData;
+  const[step,setStep]=useState("reading");
+  const[mode,setMode]=useState("strict");
+  const[timeLeft,setTimeLeft]=useState(d.reading_time_seconds||45);
+  const[responseText,setResponseText]=useState("");
+  const[lectureStarted,setLectureStarted]=useState(false);
+  const[lectureDone,setLectureDone]=useState(false);
+  const[submitting,setSubmitting]=useState(false);
+  const[startTime]=useState(Date.now());
+  const timerRef=useRef(null);
+
+  const fmtTime=(s)=>{const m=Math.floor(s/60);const sec=s%60;return`${m}:${sec<10?"0":""}${sec}`};
+
+  useEffect(()=>{
+    if(step==="submitted"||step==="lecture")return;
+    clearInterval(timerRef.current);
+    timerRef.current=setInterval(()=>{
+      setTimeLeft(t=>{
+        if(t<=1){
+          clearInterval(timerRef.current);
+          if(step==="reading"&&mode==="strict"){setStep("lecture");return 0}
+          if(step==="speaking"){handleSubmit();return 0}
+          return 0;
+        }
+        return t-1;
+      });
+    },1000);
+    return()=>clearInterval(timerRef.current);
+  },[step,mode]);
+
+  const advanceToLecture=()=>{clearInterval(timerRef.current);setStep("lecture")};
+
+  useEffect(()=>{
+    if(step!=="lecture"||lectureStarted)return;
+    setLectureStarted(true);
+    const text=d.lecture_text||"";
+    if(!text||!window.speechSynthesis){setLectureDone(true);return}
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.lang="en-US";u.rate=0.95;
+    u.onend=()=>setLectureDone(true);
+    u.onerror=()=>setLectureDone(true);
+    window.speechSynthesis.speak(u);
+    return()=>window.speechSynthesis.cancel();
+  },[step,lectureStarted]);
+
+  const advanceToSpeaking=()=>{
+    window.speechSynthesis.cancel();
+    setTimeLeft(d.speaking_time_seconds||60);
+    setStep("speaking");
+  };
+
+  const handleSubmit=async()=>{
+    clearInterval(timerRef.current);
+    window.speechSynthesis.cancel();
+    setSubmitting(true);
+    const elapsed=Math.round((Date.now()-startTime)/1000);
+    const sId=sectionData.section_id||"unknown";
+    const serverResult=await apiSubmitToeflIntegrated(sId,responseText,elapsed);
+    const score=serverResult?.score??0;
+    const bm=getBenchmark("integrated_speaking",score);
+    onSubmit({section_type:"integrated_speaking",score,max_score:30,benchmark:bm,correct:null,total:null,
+      feedback:serverResult?.details?.status==="pending_evaluation"?{status:"pending_evaluation",message:"Your response has been submitted. AI evaluation coming soon."}:serverResult?.details,
+      word_count:responseText.trim()?responseText.trim().split(/\s+/).length:0});
+  };
+
+  const timerColor=timeLeft<=15?"#E74C3C":timeLeft<=30?"#F2CC8F":T.text;
+
+  // ─── READING STEP ───
+  if(step==="reading"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>{"\u{1F4D6}"}</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Step 1: Reading Passage</span>
+          <span style={{fontFamily:Fb,fontSize:11,color:T.muted,background:T.bg,borderRadius:6,padding:"2px 8px"}}>
+            {mode==="strict"?"Strict":"Practice"}
+          </span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={()=>setMode(m=>m==="strict"?"practice":"strict")} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:8,padding:"4px 10px",cursor:"pointer",fontFamily:Fb,fontSize:11,color:T.muted}}>
+            {mode==="strict"?"Switch to Practice":"Switch to Strict"}
+          </button>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={timerColor} strokeWidth={2}><circle cx={12} cy={12} r={10}/><polyline points="12 6 12 12 16 14"/></svg>
+          <span style={{fontFamily:Fb,fontSize:16,fontWeight:700,color:timerColor,fontVariantNumeric:"tabular-nums"}}>{fmtTime(timeLeft)}</span>
+        </div>
+      </div>
+      <div style={{flex:1,padding:20}}>
+        <FadeIn>
+          <div style={{background:T.card,borderRadius:14,padding:20,boxShadow:T.shadow}}>
+            <p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{d.reading_title||"Reading Passage"}</p>
+            <p style={{fontFamily:Fb,fontSize:15,color:T.text,margin:0,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{d.reading_passage||""}</p>
+          </div>
+        </FadeIn>
+      </div>
+      <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        <Btn v="secondary" onClick={onBack} style={{flex:0}}>Cancel</Btn>
+        {mode==="practice"&&<Btn onClick={advanceToLecture} style={{flex:1}}>I'm Ready — Next Step</Btn>}
+        {mode==="strict"&&<p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"auto 0",textAlign:"center",flex:1}}>Auto-advancing when timer ends...</p>}
+      </div>
+    </div>;
+  }
+
+  // ─── LECTURE STEP ───
+  if(step==="lecture"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:16}}>{"\u{1F3A7}"}</span>
+        <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Step 2: Listen to Lecture</span>
+      </div>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:40}}>
+        <FadeIn>
+          <div style={{textAlign:"center",maxWidth:400}}>
+            <div style={{width:80,height:80,borderRadius:40,background:`linear-gradient(135deg,#2A9D8F,${T.teal})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 6px 24px rgba(42,157,143,.3)"}}>
+              {!lectureDone?<div style={{width:20,height:20,border:"3px solid rgba(255,255,255,.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
+              :<Check size={28} color="#fff"/>}
+            </div>
+            <h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"0 0 8px"}}>{d.lecture_title||"Lecture"}</h3>
+            <p style={{fontFamily:Fb,fontSize:14,color:T.muted,lineHeight:1.5,margin:0}}>
+              {!lectureDone?"Listen carefully to the lecture. You'll speak about how it relates to the reading."
+              :"Lecture complete. Proceed to your spoken response."}
+            </p>
+          </div>
+        </FadeIn>
+      </div>
+      <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        {lectureDone&&<Btn onClick={advanceToSpeaking} style={{flex:1}}>Start Speaking</Btn>}
+        {!lectureDone&&mode==="practice"&&<Btn v="secondary" onClick={advanceToSpeaking} style={{flex:1}}>Skip Lecture</Btn>}
+      </div>
+    </div>;
+  }
+
+  // ─── SPEAKING STEP ───
+  if(step==="speaking"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>{"\u{1F3A4}"}</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Step 3: Speak Your Response</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={timerColor} strokeWidth={2}><circle cx={12} cy={12} r={10}/><polyline points="12 6 12 12 16 14"/></svg>
+          <span style={{fontFamily:Fb,fontSize:16,fontWeight:700,color:timerColor,fontVariantNumeric:"tabular-nums"}}>{fmtTime(timeLeft)}</span>
+        </div>
+      </div>
+      <div style={{flex:1,padding:20}}>
+        <div style={{background:T.card,borderRadius:14,padding:14,boxShadow:T.shadow,marginBottom:14}}>
+          <p style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:T.muted,margin:"0 0 4px",textTransform:"uppercase"}}>Speaking Prompt</p>
+          <p style={{fontFamily:Fb,fontSize:14,color:T.text,margin:0,lineHeight:1.5}}>{d.speaking_prompt||"Explain how the lecture relates to the reading passage."}</p>
+          <p style={{fontFamily:Fb,fontSize:12,color:"#2A9D8F",margin:"6px 0 0",fontStyle:"italic"}}>Type what you would say (text-based practice)</p>
+        </div>
+        <textarea value={responseText} onChange={e=>setResponseText(e.target.value)} placeholder="Type your spoken response..." style={{
+          width:"100%",minHeight:200,padding:16,borderRadius:14,border:`1.5px solid ${T.border}`,fontFamily:Fb,fontSize:15,color:T.text,background:T.card,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.7
+        }} onFocus={e=>e.target.style.borderColor="#2A9D8F"} onBlur={e=>e.target.style.borderColor=T.border}/>
+        <div style={{marginTop:6}}>
+          <span style={{fontFamily:Fb,fontSize:12,color:T.muted}}>{responseText.trim()?responseText.trim().split(/\s+/).length:0} words</span>
+        </div>
+      </div>
+      <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        <Btn onClick={handleSubmit} disabled={submitting||!responseText.trim()} style={{flex:1}}>{submitting?"Submitting...":"Submit Response"}</Btn>
+      </div>
+    </div>;
+  }
+
+  return null;
 }
 
 function TOEFLScreen({level,toeflHistory,onComplete,onBack}){
@@ -5173,10 +5547,10 @@ function TOEFLScreen({level,toeflHistory,onComplete,onBack}){
     setTimeLeft(minutes*60);
     setQIdx(0);setAnswers({});setWritingText("");setSpeakingText("");setWritingWc(0);
     setWarned5(false);setWarned1(false);
-    setStage("test");
+    if(type==="integrated_writing"||type==="integrated_speaking"){setStage("integrated")}else{setStage("test")}
   };
 
-  // Timer
+  // Timer (only for non-integrated sections)
   useEffect(()=>{
     if(stage!=="test")return;
     timerRef.current=setInterval(()=>{
@@ -5235,6 +5609,18 @@ function TOEFLScreen({level,toeflHistory,onComplete,onBack}){
 
   const speakToefl=(text)=>{if(!window.speechSynthesis)return;window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="en-US";u.rate=1;window.speechSynthesis.speak(u)};
 
+  // ─── INTEGRATED FLOWS ───
+  if(stage==="integrated"&&sectionData){
+    const handleIntegratedSubmit=(rpt)=>{setReport(rpt);setStage("report")};
+    const handleIntegratedBack=()=>{setStage("select");setSectionType(null);setSectionData(null)};
+    if(sectionType==="integrated_writing"){
+      return <IntegratedWritingFlow sectionData={sectionData} onSubmit={handleIntegratedSubmit} onBack={handleIntegratedBack}/>;
+    }
+    if(sectionType==="integrated_speaking"){
+      return <IntegratedSpeakingFlow sectionData={sectionData} onSubmit={handleIntegratedSubmit} onBack={handleIntegratedBack}/>;
+    }
+  }
+
   // ─── SECTION SELECTOR ───
   if(stage==="select"){
     return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",padding:24,background:T.bg}}>
@@ -5253,8 +5639,10 @@ function TOEFLScreen({level,toeflHistory,onComplete,onBack}){
       {sectionLoading&&<div style={{textAlign:"center",padding:40}}><p style={{fontFamily:Fb,fontSize:14,color:T.muted}}>Loading section...</p></div>}
 
       {!sectionLoading&&<FadeIn delay={200}>
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {TOEFL_SECTIONS.map((sec,i)=>{
+        {/* Individual Skills */}
+        <p style={{fontFamily:Fb,fontSize:12,fontWeight:700,color:T.muted,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Individual Skills</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:24}}>
+          {TOEFL_SECTIONS.filter(s=>!s.integrated).map((sec,i)=>{
             const h=histByType[sec.type];
             return <button key={sec.type} onClick={()=>startSection(sec.type)} style={{
               background:T.card,border:`2px solid ${sec.color}20`,borderRadius:16,padding:"18px 20px",cursor:"pointer",
@@ -5265,6 +5653,32 @@ function TOEFLScreen({level,toeflHistory,onComplete,onBack}){
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <p style={{fontFamily:Fb,fontSize:16,fontWeight:600,color:T.text,margin:0}}>{sec.label}</p>
                   <span style={{fontFamily:Fb,fontSize:11,color:T.muted,background:T.bg,borderRadius:6,padding:"2px 8px"}}>{sec.time} min</span>
+                </div>
+                <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"3px 0 0"}}>{sec.desc}</p>
+                {h&&<div style={{display:"flex",gap:12,marginTop:6}}>
+                  {h.last!=null&&<span style={{fontFamily:Fb,fontSize:11,color:sec.color,fontWeight:600}}>Last: {h.last}/{sec.maxScore}</span>}
+                  {h.best>0&&<span style={{fontFamily:Fb,fontSize:11,color:T.ok,fontWeight:600}}>Best: {h.best}/{sec.maxScore}</span>}
+                </div>}
+              </div>
+              <ChevronRight size={18} color={T.muted}/>
+            </button>;
+          })}
+        </div>
+        {/* Integrated Tasks */}
+        <p style={{fontFamily:Fb,fontSize:12,fontWeight:700,color:T.muted,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Integrated Tasks</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {TOEFL_SECTIONS.filter(s=>s.integrated).map((sec,i)=>{
+            const h=histByType[sec.type];
+            return <button key={sec.type} onClick={()=>startSection(sec.type)} style={{
+              background:T.card,border:`2px solid ${sec.color}20`,borderRadius:16,padding:"18px 20px",cursor:"pointer",
+              display:"flex",alignItems:"center",gap:14,textAlign:"left",boxShadow:T.shadow,transition:"all .2s"
+            }} onMouseEnter={e=>e.currentTarget.style.borderColor=sec.color+"60"} onMouseLeave={e=>e.currentTarget.style.borderColor=sec.color+"20"}>
+              <div style={{width:52,height:52,borderRadius:14,background:`${sec.color}12`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>{sec.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <p style={{fontFamily:Fb,fontSize:16,fontWeight:600,color:T.text,margin:0}}>{sec.label}</p>
+                  <span style={{fontFamily:Fb,fontSize:11,color:T.muted,background:T.bg,borderRadius:6,padding:"2px 8px"}}>{sec.time} min</span>
+                  <span style={{fontFamily:Fb,fontSize:10,color:"#fff",background:`linear-gradient(135deg,${sec.color},${T.navy})`,borderRadius:6,padding:"2px 8px",fontWeight:700}}>MULTI-STEP</span>
                 </div>
                 <p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"3px 0 0"}}>{sec.desc}</p>
                 {h&&<div style={{display:"flex",gap:12,marginTop:6}}>
@@ -5471,7 +5885,15 @@ function TOEFLScreen({level,toeflHistory,onComplete,onBack}){
       {report.feedback&&<FadeIn delay={450}>
         <div style={{background:T.card,borderRadius:16,padding:18,boxShadow:T.shadow,marginBottom:20}}>
           <p style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.text,margin:"0 0 8px"}}>Feedback</p>
-          <p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:0,lineHeight:1.6}}>{typeof report.feedback==="string"?report.feedback:JSON.stringify(report.feedback)}</p>
+          {report.feedback?.status==="pending_evaluation"
+            ?<div style={{background:`${T.hi}15`,borderRadius:10,padding:"12px 16px"}}>
+              <p style={{fontFamily:Fb,fontSize:14,color:"#B8860B",margin:0,lineHeight:1.6}}>
+                {report.feedback.message||"Your response has been submitted. AI evaluation coming soon."}
+              </p>
+              {report.word_count!=null&&<p style={{fontFamily:Fb,fontSize:12,color:T.muted,margin:"6px 0 0"}}>Word count: {report.word_count}</p>}
+            </div>
+            :<p style={{fontFamily:Fb,fontSize:14,color:T.muted,margin:0,lineHeight:1.6}}>{typeof report.feedback==="string"?report.feedback:report.feedback?.feedback||JSON.stringify(report.feedback)}</p>
+          }
         </div>
       </FadeIn>}
 
