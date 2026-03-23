@@ -5149,12 +5149,18 @@ async function apiSubmitToeflIntegrated(sectionId,userText,timeSpent){
    ═══════════════════════════════════════════════ */
 function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
   const d=sectionData.data||sectionData;
-  const[step,setStep]=useState("reading"); // reading, lecture, writing, submitted
+  const[step,setStep]=useState("reading"); // reading, lecture, questions, writing, submitted
   const[mode,setMode]=useState("strict"); // strict = auto-advance, practice = manual
   const[timeLeft,setTimeLeft]=useState(d.reading_time_seconds||180);
   const[essayText,setEssayText]=useState("");
   const[essayWc,setEssayWc]=useState(0);
   const[lectureStarted,setLectureStarted]=useState(false);
+  // MCQ state
+  const mcqList=d.mcq_questions||[];
+  const[mcqIdx,setMcqIdx]=useState(0);
+  const[mcqSelected,setMcqSelected]=useState(null);
+  const[mcqRevealed,setMcqRevealed]=useState(false);
+  const[mcqResults,setMcqResults]=useState([]); // [{correct:bool}]
   const[lectureDone,setLectureDone]=useState(false);
   const[submitting,setSubmitting]=useState(false);
   const[gradeResult,setGradeResult]=useState(null);
@@ -5236,8 +5242,18 @@ function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
     return()=>{window.speechSynthesis.cancel();if(synthRef.keepAlive)clearInterval(synthRef.keepAlive)};
   },[step,lectureStarted]);
 
-  const advanceToWriting=()=>{
+  const advanceFromLecture=()=>{
     window.speechSynthesis.cancel();
+    if(synthRef.keepAlive)clearInterval(synthRef.keepAlive);
+    if(mcqList.length>0){
+      setMcqIdx(0);setMcqSelected(null);setMcqRevealed(false);setMcqResults([]);
+      setStep("questions");
+    }else{
+      setTimeLeft(d.writing_time_seconds||1200);
+      setStep("writing");
+    }
+  };
+  const advanceToWriting=()=>{
     setTimeLeft(d.writing_time_seconds||1200);
     setStep("writing");
   };
@@ -5368,9 +5384,140 @@ function IntegratedWritingFlow({sectionData,onSubmit,onBack}){
         </FadeIn>
       </div>
       <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
-        {lectureDone&&<Btn onClick={advanceToWriting} style={{flex:1}}>Start Writing</Btn>}
-        {!lectureDone&&mode==="practice"&&<Btn v="secondary" onClick={()=>{window.speechSynthesis.cancel();if(synthRef.keepAlive)clearInterval(synthRef.keepAlive);setLecturePlaying(false);advanceToWriting()}} style={{flex:1}}>Skip Lecture</Btn>}
+        {lectureDone&&<Btn onClick={advanceFromLecture} style={{flex:1}}>{mcqList.length>0?"Answer Questions":"Start Writing"}</Btn>}
+        {!lectureDone&&mode==="practice"&&<Btn v="secondary" onClick={()=>{window.speechSynthesis.cancel();if(synthRef.keepAlive)clearInterval(synthRef.keepAlive);setLecturePlaying(false);advanceFromLecture()}} style={{flex:1}}>Skip Lecture</Btn>}
         {!lectureDone&&mode==="strict"&&<p style={{fontFamily:Fb,fontSize:13,color:T.muted,margin:"auto 0",textAlign:"center",flex:1}}>Listen to the full lecture before continuing...</p>}
+      </div>
+    </div>;
+  }
+
+  // ─── QUESTIONS STEP (MCQ between lecture and writing) ───
+  if(step==="questions"&&mcqList.length>0){
+    const q=mcqList[mcqIdx];
+    const optLetters=["A","B","C","D"];
+    const isLast=mcqIdx>=mcqList.length-1;
+    const showSummary=mcqIdx>=mcqList.length; // after last question answered
+
+    // Score summary screen
+    if(showSummary){
+      const correct=mcqResults.filter(r=>r.correct).length;
+      const total=mcqResults.length;
+      const pct=Math.round((correct/total)*100);
+      const summaryColor=pct>=80?T.ok:pct>=50?T.accent:"#E74C3C";
+      return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+        <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>{"\u{2705}"}</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Comprehension Check Complete</span>
+        </div>
+        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:30}}>
+          <FadeIn>
+            <div style={{textAlign:"center",maxWidth:400}}>
+              <div style={{width:90,height:90,borderRadius:45,background:`conic-gradient(${summaryColor} ${pct}%, ${T.bg} 0)`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
+                <div style={{width:70,height:70,borderRadius:35,background:T.card,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
+                  <span style={{fontFamily:Fd,fontSize:26,fontWeight:700,color:summaryColor}}>{correct}/{total}</span>
+                </div>
+              </div>
+              <h3 style={{fontFamily:Fd,fontSize:22,fontWeight:700,color:T.text,margin:"0 0 8px"}}>
+                {pct>=80?"Great comprehension!":pct>=50?"Decent understanding":"Review the material"}
+              </h3>
+              <p style={{fontFamily:Fb,fontSize:14,color:T.muted,lineHeight:1.5,margin:"0 0 20px"}}>
+                You got {correct} out of {total} questions correct. {pct>=50?"You're ready to write your essay.":"Try to use what you learned in your essay."}
+              </p>
+              {/* Per-question recap */}
+              <div style={{display:"flex",flexDirection:"column",gap:6,textAlign:"left"}}>
+                {mcqResults.map((r,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:r.correct?`${T.ok}08`:"#E74C3C08",borderRadius:8}}>
+                  <div style={{width:20,height:20,borderRadius:10,background:r.correct?`${T.ok}18`:"#E74C3C18",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {r.correct?<Check size={10} color={T.ok}/>:<span style={{fontFamily:Fb,fontSize:11,fontWeight:700,color:"#E74C3C"}}>{"\u2717"}</span>}
+                  </div>
+                  <span style={{fontFamily:Fb,fontSize:12,color:T.text,flex:1}}>Q{i+1}: {mcqList[i]?.question_type==="reading_comprehension"?"Reading":mcqList[i]?.question_type==="lecture_comprehension"?"Lecture":"Contradiction"}</span>
+                  <span style={{fontFamily:Fb,fontSize:11,color:r.correct?T.ok:"#E74C3C",fontWeight:600}}>{r.correct?"Correct":"Incorrect"}</span>
+                </div>)}
+              </div>
+            </div>
+          </FadeIn>
+        </div>
+        <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px"}}>
+          <Btn onClick={advanceToWriting} style={{width:"100%"}}>Start Writing Essay</Btn>
+        </div>
+      </div>;
+    }
+
+    // Individual question screen
+    const userLetter=mcqSelected!=null?optLetters[mcqSelected]:null;
+    const isCorrect=mcqRevealed&&userLetter===q.correct_answer;
+    const correctIdx=optLetters.indexOf(q.correct_answer);
+
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
+      <div style={{position:"sticky",top:0,zIndex:10,background:T.card,borderBottom:`1px solid ${T.border}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>{"\u{1F4CB}"}</span>
+          <span style={{fontFamily:Fb,fontSize:14,fontWeight:600,color:T.text}}>Comprehension Check</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{fontFamily:Fb,fontSize:13,fontWeight:600,color:T.muted}}>{mcqIdx+1} / {mcqList.length}</span>
+          {/* Progress dots */}
+          <div style={{display:"flex",gap:4,marginLeft:6}}>
+            {mcqList.map((_,i)=><div key={i} style={{width:8,height:8,borderRadius:4,background:i<mcqResults.length?(mcqResults[i].correct?T.ok:"#E74C3C"):i===mcqIdx?"#6B5B95":`${T.muted}30`}}/>)}
+          </div>
+        </div>
+      </div>
+      <div style={{flex:1,padding:20}}>
+        <FadeIn key={mcqIdx}>
+          {/* Question type badge */}
+          <div style={{marginBottom:14}}>
+            <span style={{fontFamily:Fb,fontSize:11,fontWeight:700,color:q.question_type==="reading_comprehension"?T.accent:q.question_type==="lecture_comprehension"?T.navy:"#6B5B95",
+              background:q.question_type==="reading_comprehension"?`${T.accent}12`:q.question_type==="lecture_comprehension"?`${T.navy}12`:"#6B5B9512",
+              borderRadius:6,padding:"3px 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+              {q.question_type==="reading_comprehension"?"Reading":q.question_type==="lecture_comprehension"?"Lecture":"Contradiction"}
+            </span>
+          </div>
+
+          {/* Question */}
+          <p style={{fontFamily:Fb,fontSize:16,fontWeight:500,color:T.text,margin:"0 0 18px",lineHeight:1.6}}>{q.question}</p>
+
+          {/* Options */}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {(q.options||[]).map((opt,i)=>{
+              const letter=optLetters[i];
+              const sel=mcqSelected===i;
+              const isThisCorrect=i===correctIdx;
+              let bg=T.card,border=T.border,textCol=T.text;
+              if(mcqRevealed){
+                if(isThisCorrect){bg=`${T.ok}12`;border=T.ok;}
+                else if(sel&&!isThisCorrect){bg="#E74C3C10";border="#E74C3C";}
+                else{bg=T.card;border=`${T.muted}20`;}
+              }else if(sel){bg=`#6B5B9510`;border="#6B5B95";}
+              return <button key={i} onClick={()=>{if(!mcqRevealed)setMcqSelected(i)}} disabled={mcqRevealed} style={{
+                background:bg,border:`2px solid ${border}`,borderRadius:12,padding:"14px 16px",cursor:mcqRevealed?"default":"pointer",
+                fontFamily:Fb,fontSize:14,color:textCol,textAlign:"left",transition:"all .15s",display:"flex",alignItems:"center",gap:12,opacity:mcqRevealed&&!sel&&!isThisCorrect?0.5:1
+              }}>
+                <div style={{width:28,height:28,borderRadius:14,border:`2px solid ${mcqRevealed?(isThisCorrect?T.ok:sel?"#E74C3C":T.border):sel?"#6B5B95":T.border}`,
+                  background:mcqRevealed?(isThisCorrect?T.ok:sel?"#E74C3C":"transparent"):sel?"#6B5B95":"transparent",
+                  display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  {mcqRevealed&&isThisCorrect&&<Check size={14} color="#fff"/>}
+                  {mcqRevealed&&sel&&!isThisCorrect&&<span style={{fontFamily:Fb,fontSize:14,fontWeight:700,color:"#fff"}}>{"\u2717"}</span>}
+                  {!mcqRevealed&&<span style={{fontFamily:Fb,fontSize:12,fontWeight:600,color:sel?"#fff":T.muted}}>{letter}</span>}
+                </div>
+                <span style={{flex:1}}>{opt.replace(/^[A-D]\.\s*/,"")}</span>
+              </button>;
+            })}
+          </div>
+
+          {/* Explanation (shown after reveal) */}
+          {mcqRevealed&&<FadeIn>
+            <div style={{marginTop:16,background:isCorrect?`${T.ok}08`:"#FFF8E1",border:`1.5px solid ${isCorrect?`${T.ok}25`:"#FFE082"}`,borderRadius:12,padding:"14px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                {isCorrect?<Check size={14} color={T.ok}/>:<span style={{fontSize:14}}>{"\u{1F4A1}"}</span>}
+                <span style={{fontFamily:Fb,fontSize:13,fontWeight:700,color:isCorrect?T.ok:"#B8860B"}}>{isCorrect?"Correct!":"Not quite"}</span>
+              </div>
+              <p style={{fontFamily:Fb,fontSize:13,color:T.text,margin:0,lineHeight:1.6}}>{q.explanation}</p>
+            </div>
+          </FadeIn>}
+        </FadeIn>
+      </div>
+      <div style={{position:"sticky",bottom:0,background:T.card,borderTop:`1px solid ${T.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        {!mcqRevealed&&<Btn onClick={()=>{if(mcqSelected==null)return;setMcqRevealed(true);const letter=optLetters[mcqSelected];setMcqResults(r=>[...r,{correct:letter===q.correct_answer}])}} disabled={mcqSelected==null} style={{flex:1}}>Check Answer</Btn>}
+        {mcqRevealed&&<Btn onClick={()=>{setMcqSelected(null);setMcqRevealed(false);setMcqIdx(i=>i+1)}} style={{flex:1}}>{isLast?"See Results":"Next Question"}</Btn>}
       </div>
     </div>;
   }
